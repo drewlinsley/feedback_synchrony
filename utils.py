@@ -59,6 +59,9 @@ def fix_complex_gates(a,axis=-1):
   a_comb = tf.minimum(both_splits[0],both_splits[1]) #real/imaginary
   return tf.concat(filt_dim,[a_comb,a_comb])
 
+def pass_gate(a):
+  return a
+
 def real_mult(a,b,axis=-1):
   a_shape = a.get_shape()
   num_filts = a_shape[-1]

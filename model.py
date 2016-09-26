@@ -30,7 +30,7 @@ def build_model(s):
 		gate_fun = fix_complex_gates
 		mult_fun = complex_elemwise_mult
 	elif s.model_name == 'real':
-		gate_fun = None
+		gate_fun = pass_gate
 		mult_fun = tf.mul
 	else: 
 		print('model name is not recognized')
@@ -168,7 +168,7 @@ def build_model(s):
 	return session, init_vars, merged, saver, optim, writer, cost, X, targets#, keep_prob
 
 
-def batch_train(session, merged, saver, optim, writer, cost, X, targets, keep_prob, X_train_raw, y_train_temp, s):
+def batch_train(session, merged, saver, optim, writer, cost, X, targets, X_train_raw, y_train_temp, s):
 	#Consider clipping
 	#grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
 	#                                     config.max_grad_norm)

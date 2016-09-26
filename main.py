@@ -22,9 +22,9 @@ X_train_raw/=data_std
 # Model hyperparameters/training parameters
 pool_size = 2
 filters = [40,40,40]
-settings = Map({'batch_size':10,
-'num_steps':5,
-'epochs':30,
+settings = Map({'batch_size':30,
+'num_steps':3,
+'epochs':40,
 'num_afferents':1, #set to some # > # of layers for fully connected
 'filters':filters,
 'filter_r':[11,3,3],
@@ -33,7 +33,7 @@ settings = Map({'batch_size':10,
 'stride':[1,1,1],
 'pool_size':pool_size,
 'output_shape':1, #regression
-'la':0.1, #l2 regularization for FC layer
+'la':1, #l2 regularization for FC layer
 'dropout_prob':.5,
 'channels':1,
 'ckpt_dir':'./ckpt_dir',
@@ -52,11 +52,11 @@ settings = Map({'batch_size':10,
 })
 
 # Build Model
-session, init_vars, merged, saver, optim, writer, cost, X, targets, keep_prob = model.build_model(settings)
+session, init_vars, merged, saver, optim, writer, cost, X, targets = model.build_model(settings)
 session.run(init_vars)
 if settings.restore_model == True:
   ckpt = tf.train.get_checkpoint_state(ckpt_dir)
   saver.restore(session,ckpt.model_checkpoint_path)
 
 #Train model
-session, result = model.batch_train(session, merged, saver, optim, writer, cost, X, targets, keep_prob, X_train_raw, y_train_temp, settings)
+session, result = model.batch_train(session, merged, saver, optim, writer, cost, X, targets, X_train_raw, y_train_temp, settings)
