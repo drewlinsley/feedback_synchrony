@@ -26,6 +26,16 @@ def build_model(settings):
 
 	hh = [height]
 	hc = [prev_channels]
+
+	if model_name == 'complex':
+		gate_fun = fix_complex_gates
+		mult_fun = complex_elemwise_mult
+	elif model_name == 'real':
+		gate_fun = None
+		mult_fun = tf.mul
+	else: 
+		print('model name is not recognized')
+		sys.exit()
 	with tf.device('/gpu:' + str(gpu_number)):
 	  lr = tf.placeholder(tf.float32, [])
 	  keep_prob = tf.placeholder(tf.float32)
@@ -102,9 +112,9 @@ def build_model(settings):
 	      ho = tf.nn.conv2d(state[layer], Uo[layer], layer_strides, padding='SAME') + Uob[layer]
 	      hc = tf.nn.conv2d(state[layer], Uc[layer], layer_strides, padding='SAME') + Ucb[layer]
 	      #Fix complex gates after applying activations
-	      i = fix_complex_gates(inner_activation(xi + hi)) #need to implement the complex-valued ops fix_complex_gates
-	      f = fix_complex_gates(inner_activation(xf + hf))
-	      o = fix_complex_gates(inner_activation(xo + ho)) #The original implementation handled the h's seperately
+	      i = gate_fun(inner_activation(xi + hi)) #need to implement the complex-valued ops fix_complex_gates
+	      f = gate_fun(inner_activation(xf + hf))
+	      o = gate_fun(inner_activation(xo + ho)) #The original implementation handled the h's seperately
 
 	      # Main contribution of paper:
 	      target_layer = np.min([layer + num_afferents, num_hidden_layers])
@@ -120,8 +130,9 @@ def build_model(settings):
 	        #c is now calculated as tanh(current hidden content + sum of the gated afferents)
 	        new_c = activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
 	      #Get new h and c as per usual
-	      c = complex_elemwise_mult(f, c) + complex_elemwise_mult(i, new_c) #complex multiplication here
-	      state[layer] = complex_elemwise_mult(o, activation(c))
+	      c = mult_fun(f, c) + mult_fun(i, new_c) #complex multiplication here
+	      state[layer] = mult_fun(o, activation(c))
+
 	    #if classsificaiton
 	    #res_pool_state = tf.reshape(pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
 	    #logits = tf.nn.bias_add(tf.matmul(state[num_hidden_layers-1], output_weights), output_bias)

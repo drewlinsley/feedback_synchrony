@@ -22,7 +22,7 @@ X_train_raw/=data_std
 settings = {'batch_size':30,
 'num_steps':5,
 'epochs':30,
-'num_afferents':1,
+'num_afferents':1, #set to some # > # of layers for fully connected
 'filters':[40,40,40],
 'filter_r':[3,3,3],
 'filter_w':[3,3,3],
@@ -34,7 +34,7 @@ settings = {'batch_size':30,
 'dropout_prob':.5,
 'channels':1,
 'ckpt_dir':'./ckpt_dir',
-'model_name':'complex',
+'model_name':'complex', #real or complex
 'gpu_number':0,
 'restore_model':False,
 'height':im_size[0],
