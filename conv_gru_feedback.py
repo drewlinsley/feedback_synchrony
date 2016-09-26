@@ -31,6 +31,9 @@ pool_size = 2
 output_shape = 1 #regression
 la = 0.01 #l2 regularization for FC layer
 channels = 1
+ckpt_dir = './ckpt_dir'
+model_name = 'real_full'
+restore_model = False
 height = im_size[0]
 width = im_size[1]
 FC_dim = (height // pool_size) **2 * filters[-1]
@@ -57,7 +60,7 @@ Sc = []; Sh = []; state = [];
 hh = [height]
 hc = [prev_channels]
 ## Build Model
-with tf.device('/gpu:0'):
+with tf.device('/gpu:3'):
   lr = tf.placeholder(tf.float32, [])
   X = tf.placeholder(tf.float32, [batch_size, num_steps, height, width, channels]) #batch,time,height,width,channels
   targets = tf.placeholder(tf.float32, [batch_size]) #replace num_steps with 1 if doing a single prediction
@@ -124,33 +127,29 @@ with tf.device('/gpu:0'):
     for layer in range(num_hidden_layers):
       layer_strides = np.repeat(stride[layer],4).tolist()
       #Facing the input
-      xi = tf.nn.conv2d(h_prev, Wi[layer] * Wib[layer], layer_strides, padding='SAME')
-      xf = tf.nn.conv2d(h_prev, Wf[layer] * Wfb[layer], layer_strides, padding='SAME')
-      xo = tf.nn.conv2d(h_prev, Wo[layer] * Wob[layer], layer_strides, padding='SAME')
-      xc = tf.nn.conv2d(h_prev, Wc[layer] * Wcb[layer], layer_strides, padding='SAME')
+      xi = tf.nn.conv2d(h_prev, Wi[layer], layer_strides, padding='SAME') + Wib[layer]
+      xf = tf.nn.conv2d(h_prev, Wf[layer], layer_strides, padding='SAME') + Wfb[layer]
+      xo = tf.nn.conv2d(h_prev, Wo[layer], layer_strides, padding='SAME') + Wob[layer]
+      xc = tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]
       #Facing the hidden layer
-      hi = tf.nn.conv2d(state[layer], Ui[layer] * Uib[layer], layer_strides, padding='SAME')
-      hf = tf.nn.conv2d(state[layer], Uf[layer] * Ufb[layer], layer_strides, padding='SAME')
-      ho = tf.nn.conv2d(state[layer], Uo[layer] * Uob[layer], layer_strides, padding='SAME')
-      hc = tf.nn.conv2d(state[layer], Uc[layer] * Ucb[layer], layer_strides, padding='SAME')
+      hi = tf.nn.conv2d(state[layer], Ui[layer], layer_strides, padding='SAME') + Uib[layer]
+      hf = tf.nn.conv2d(state[layer], Uf[layer], layer_strides, padding='SAME') + Ufb[layer]
+      ho = tf.nn.conv2d(state[layer], Uo[layer], layer_strides, padding='SAME') + Uob[layer]
+      hc = tf.nn.conv2d(state[layer], Uc[layer], layer_strides, padding='SAME') + Ucb[layer]
       #Fix complex gates after applying activations
       i = (inner_activation(xi + hi)) #need to implement the complex-valued ops fix_complex_gates
       f = (inner_activation(xf + hf))
       o = (inner_activation(xo + ho)) #The original implementation handled the h's seperately
-
       # Main contribution of paper:
       #con_range = range(layer + np.min([layer + num_afferents, num_hidden_layers])) #need to adjust the hidden state concat
       con_range = range(num_hidden_layers)
       #Gates  applied to every afferent
-      gates = [inner_activation(tf.nn.conv2d(h_prev, Wg[idx] * Wgb[idx], layer_strides, padding='SAME') + 
-        tf.reduce_sum(tf.reshape(tf.nn.conv2d(prev_concat_h, Ug[idx] * Ugb[idx], layer_strides, padding='SAME'),(batch_size,prev_height,prev_height,filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
-
-
+      gates = [inner_activation((tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
+        tf.reduce_sum(tf.reshape((tf.nn.conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(batch_size,prev_height,prev_height,filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
       #Gated_prev_timestep is the activations from all afferents weighted by Gates
-      gated_prev_timestep = [gates[idx] * tf.nn.conv2d(state[layer], Uc[idx] * Ucb[idx], layer_strides, padding='SAME') for idx in con_range]
+      gated_prev_timestep = [gates[idx - layer] * (tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx])for idx in con_range]
       #c is now calculated as tanh(current hidden content + sum of the gated afferents)
-      new_c = activation(tf.nn.conv2d(h_prev, Wc[layer] * Wcb[layer], layer_strides, padding='SAME') + tf.add_n(gated_prev_timestep))
-
+      new_c = activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
       #Get new h and c as per usual
       c = tf.mul(f, c) + tf.mul(i, new_c) #complex multiplication here
       state[layer] = tf.mul(o, activation(c))
@@ -182,13 +181,19 @@ merged = tf.merge_all_summaries()
 #config.gpu_options.allow_growth = True
 #config.log_device_placement=True
 #session = tf.Session(config)
+#saver = tf.train.Saver()
 session = tf.Session()
-writer = tf.train.SummaryWriter("summaries/gfrnn", session.graph)
+writer = tf.train.SummaryWriter('summaries/' + model_name, session.graph)
 
 # Train Model
 #optim = tf.train.GradientDescentOptimizer(lr).minimize(cost)
 optim = tf.train.AdamOptimizer(1e-4).minimize(cost)
+saver = tf.train.Saver()
 session.run(tf.initialize_all_variables())
+
+if restore_model == True:
+  ckpt = tf.train.get_checkpoint_state(ckpt_dir)
+  saver.restore(session,ckpt.model_checkpoint_path)
 
 costs = 0.0
 iters = 0
@@ -214,4 +219,6 @@ for i in range(epochs):
       print(iters, np.exp(costs / iters))
       writer.add_summary(result, iters)
       writer.flush()
+  checkpoint_file = ckpt_dir + '/' + model_name + '_epoch_' + str(i)
+  saver.save(session, checkpoint_file)
 
