@@ -19,65 +19,53 @@ def slice_for_axis(axis, s):
 
 def fix_complex_gates(a,axis=-1):
   a_shape = a.get_shape()
-  la = len(a_shape)
-  a_real = a[slice_for_axis(axis=la, s=slice(0, a_shape[la] / 2))]
-  a_imag = a[slice_for_axis(axis=la, s=slice(a_shape[la] / 2, None))]
-  a_comb = tf.minimum(a_real,a_imag)
-  return tf.concat(la,[a_comb,a_comb])
+  num_filts = a_shape[-1]
+  filt_dim = len(a_shape) - 1
+  both_splits = tf.split(filt_dim,2,a)
+  a_comb = tf.minimum(both_splits[0],both_splits[1]) #real/imaginary
+  return tf.concat(filt_dim,[a_comb,a_comb])
 
 def real_mult(a,b,axis=-1):
-  axis = 1
-  a_real = a[slice_for_axis(axis=axis, s=slice(0, a.shape[axis] / 2))]
-  b_real = b[slice_for_axis(axis=axis, s=slice(0, b.shape[axis] / 2))]
-  return (a_real * b_real)
+  a_shape = a.get_shape()
+  num_filts = a_shape[-1]
+  filt_dim = len(a_shape) - 1
+  a_real = tf.split(filt_dim,2,a)[0]
+  b_real = tf.split(filt_dim,2,b)[0]
+  return tf.mul(a_real,b_real)
 
 def slice_for_axis(axis, s):
   return (slice(None),) * axis + (s,)
 
 def complex_elemwise_mult(a, b, axis=-1):
-  assert a.ndim == b.ndim
-  if axis < 0: axis %= a.ndim
-  assert 0 <= axis < a.ndim
   #axis = 1 #treat half of the conv filters as complex (for th).  uncomment the above if using tf
   a_shape = a.get_shape()
-  la = len(a_shape)
-  b_shape = b.get_shape()
-  lb = len(b_shape)
-  a_real = a[slice_for_axis(axis=la, s=slice(0, a_shape[la] / 2))]
-  a_imag = a[slice_for_axis(axis=la, s=slice(a_shape[la] / 2, None))]
-  b_real = b[slice_for_axis(axis=lb, s=slice(0, b_shape[lb] / 2))]
-  b_imag = b[slice_for_axis(axis=lb, s=slice(b_shape[lb] / 2, None))]
-  r_real = tf.mul(a_real,b_real) - tf.mul(a_imag,b_imag)
-  r_imag = tf.mul(a_real,b_imag) + tf.mul(a_imag,b_real) #mul versus *?
-  return tf.concat(axis,[r_real, r_imag])
+  num_filts = a_shape[-1]
+  filt_dim = len(a_shape) - 1
+  a_both = tf.split(filt_dim,2,a)
+  b_both = tf.split(filt_dim,2,b)
+  r_real = tf.mul(a_both[0],b_both[0]) - tf.mul(a_both[1],b_both[1])
+  r_imag = tf.mul(a_both[0],b_both[1]) + tf.mul(a_both[1],b_both[0]) #mul versus *?
+  return tf.concat(filt_dim,[r_real, r_imag])
 
 def complex_bound(a, axis=-1):
   # Via Associative LSTMs, http://arxiv.org/abs/1602.03032
-  if axis < 0: axis %= a.ndim
-  assert 0 <= axis < a.ndim
   #axis = 1 #treat half of the conv filters as complex (for th).  uncomment the above if using tf 
   a_shape = a.get_shape()
-  la = len(a_shape)
-  a_real = a[slice_for_axis(axis=la, s=slice(0, a_shape[la] / 2))]
-  a_imag = a[slice_for_axis(axis=la, s=slice(a_shape[la] / 2, None))]
-  d = tf.maximum(np.float32(1), tf.sqrt(a_real * a_real + a_imag * a_imag))
-  r_real = a_real / d
-  r_imag = a_imag / d
+  num_filts = a_shape[-1]
+  filt_dim = len(a_shape) - 1
+  a_both = tf.split(filt_dim,2,a)
+  d = tf.maximum(np.float32(1), tf.sqrt(a_both[0] * a_both[0] + a_both[1] * a_both[1]))
+  r_real = a_both[0] / d
+  r_imag = a_both[1] / d
   return tf.concat(la,[r_real, r_imag])
 
 def complex_dot(a, b):
-  assert a.ndim >= 1
-  assert b.ndim >= 1
-  a_axis = a.ndim - 1
   a_shape = a.get_shape()
-  la = len(a_shape)
-  b_shape = b.get_shape()
-  lb = len(b_shape)
-  a_real = a[slice_for_axis(axis=la, s=slice(0, a_shape[la] / 2))]
-  a_imag = a[slice_for_axis(axis=la, s=slice(a_shape[la] / 2, None))]
-  b_real = b[slice_for_axis(axis=lb, s=slice(0, b_shape[lb] / 2))]
-  b_imag = b[slice_for_axis(axis=lb, s=slice(b_shape[lb] / 2, None))]
-  r_real = tf.dot(a_real, b_real) - tf.dot(a_imag, b_imag)
-  r_imag = tf.dot(a_real, b_imag) + tf.dot(a_imag, b_real)
+  num_filts = a_shape[-1]
+  filt_dim = len(a_shape) - 1
+  a_both = tf.split(filt_dim,2,a)
+  b_both = tf.split(filt_dim,2,b)
+  r_real = tf.dot(a_both[0], b_both[0]) - tf.dot(a_both[1], b_both[1])
+  r_imag = tf.dot(a_both[0], b_both[1]) + tf.dot(a_both[1], b_both[0])
   return tf.concat(la,[r_real, r_imag])
 

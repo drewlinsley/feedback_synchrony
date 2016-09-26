@@ -139,7 +139,7 @@ with tf.device('/gpu:0'):
       o = fix_complex_gates(inner_activation(xo + ho)) #The original implementation handled the h's seperately
 
       # Main contribution of paper:
-      target_layer = layer + np.min([layer + num_afferents, num_hidden_layers])
+      target_layer = np.min([layer + num_afferents, num_hidden_layers])
       if layer == target_layer:
         gated_prev_timestep = tf.nn.conv2d(state[layer], Uc[idx] * Ucb[idx], layer_strides, padding='SAME')
         new_c = activation(tf.nn.conv2d(h_prev, Wc[layer] * Wcb[layer], layer_strides, padding='SAME') + gated_prev_timestep)
@@ -148,7 +148,7 @@ with tf.device('/gpu:0'):
         gates = [inner_activation(tf.nn.conv2d(h_prev, Wg[idx] * Wgb[idx], layer_strides, padding='SAME') + 
           tf.reduce_sum(tf.reshape(tf.nn.conv2d(prev_concat_h, Ug[idx] * Ugb[idx], layer_strides, padding='SAME'),(batch_size,prev_height,prev_height,filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
         #Gated_prev_timestep is the activations from all afferents weighted by Gates
-        gated_prev_timestep = [gates[idx] * tf.nn.conv2d(state[layer], Uc[idx] * Ucb[idx], layer_strides, padding='SAME') for idx in con_range]
+        gated_prev_timestep = [gates[idx - layer] * tf.nn.conv2d(state[layer], Uc[idx] * Ucb[idx], layer_strides, padding='SAME') for idx in con_range]
         #c is now calculated as tanh(current hidden content + sum of the gated afferents)
         new_c = activation(tf.nn.conv2d(h_prev, Wc[layer] * Wcb[layer], layer_strides, padding='SAME') + tf.add_n(gated_prev_timestep))
       #Get new h and c as per usual

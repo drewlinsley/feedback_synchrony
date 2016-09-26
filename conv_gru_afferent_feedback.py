@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.models.rnn.ptb import reader
@@ -31,10 +32,13 @@ pool_size = 2
 output_shape = 1 #regression
 la = 0.01 #l2 regularization for FC layer
 channels = 1
+ckpt_dir = "./ckpt_dir"
 height = im_size[0]
 width = im_size[1]
 FC_dim = (height // pool_size) **2 * filters[-1]
 
+if not os.path.exists(ckpt_dir):
+    os.makedirs(ckpt_dir)
 #Weight inits
 #init = tf.contrib.layers.xavier_initializer
 init = tf.contrib.layers.xavier_initializer_conv2d
@@ -175,6 +179,7 @@ merged = tf.merge_all_summaries()
 #config.gpu_options.allow_growth = True
 #config.log_device_placement=True
 #session = tf.Session(config)
+#saver = tf.train.Saver()
 session = tf.Session()
 writer = tf.train.SummaryWriter("summaries/gfrnn", session.graph)
 
