@@ -165,7 +165,7 @@ def build_model(s):
 	saver = tf.train.Saver()
 	init_vars = tf.initialize_all_variables()
 
-	return session, init_vars, merged, saver, optim, writer, cost, X, targets, keep_prob
+	return session, init_vars, merged, saver, optim, writer, cost, X, targets#, keep_prob
 
 
 def batch_train(session, merged, saver, optim, writer, cost, X, targets, keep_prob, X_train_raw, y_train_temp, s):
