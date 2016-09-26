@@ -7,6 +7,7 @@ from tensorflow.models.rnn.ptb import reader
 from utils import * #_variable_with_weight_decay
 import prepare_mnist_data
 import data_loader
+import os
 
 #Load data
 which_data = 'cluttered_mnist'
@@ -18,21 +19,23 @@ X_train_raw-=data_mu
 X_train_raw/=data_std
 
 # Hyperparameters
-batch_size = 10
+batch_size = 30
 num_steps = 5
-epochs = 20
+epochs = 30
 num_afferents = 1
-filters = [80,80,80]
+filters = [40,40,40]
 filter_r = [3,3,3]
 filter_w = [3,3,3]
 padding = [0,0,0]
 stride = [1,1,1]
 pool_size = 2
 output_shape = 1 #regression
-la = 0.01 #l2 regularization for FC layer
+la = 0.1 #l2 regularization for FC layer
+dropout_prob = .5
 channels = 1
 ckpt_dir = './ckpt_dir'
 model_name = 'complex'
+gpu_number = 0
 restore_model = False
 height = im_size[0]
 width = im_size[1]
@@ -62,8 +65,9 @@ Sc = []; Sh = []; state = [];
 hh = [height]
 hc = [prev_channels]
 ## Build Model
-with tf.device('/gpu:2'):
+with tf.device('/gpu:' + str(gpu_number)):
   lr = tf.placeholder(tf.float32, [])
+  keep_prob = tf.placeholder(tf.float32)
   X = tf.placeholder(tf.float32, [batch_size, num_steps, height, width, channels]) #batch,time,height,width,channels
   targets = tf.placeholder(tf.float32, [batch_size]) #replace num_steps with 1 if doing a single prediction
 
@@ -165,7 +169,8 @@ with tf.device('/gpu:2'):
     #loss += 5e-4 + regularizers #tf.reduce_sum(step_loss)
     prev_concat_h = tf.concat(3, state)
   pool_state = tf.nn.max_pool(state[layer],ksize=[1,pool_size,pool_size,1],strides=[1,pool_size,pool_size,1],padding='VALID',name='end_pool')
-  res_pool_state = tf.reshape(pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
+  drop_pool_state = tf.nn.dropout(pool_state,keep_prob)
+  res_pool_state = tf.reshape(drop_pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
   pred = tf.add(tf.matmul(res_pool_state,fc1_weights),fc1_biases)
   regularizers = tf.add(tf.nn.l2_loss(fc1_weights),tf.nn.l2_loss(fc1_biases))
   error_loss = tf.reduce_sum((tf.pow(pred-targets, 2))/ batch_size)
@@ -193,6 +198,9 @@ if restore_model == True:
 
 costs = 0.0
 iters = 0
+#Consider clipping
+#grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
+#                                     config.max_grad_norm)
 
 data_size = X_train_raw.shape[0]
 cv_folds = data_size // batch_size
@@ -208,12 +216,13 @@ for i in range(epochs):
     by = y[train_idx]
     result, step_cost, _, = session.run([merged, cost, optim],
                            #{X: x, targets: y, lr: 1.0 / (i + 1)})
-                           {X: bx, targets: by})
+                           {X: bx, targets: by, keep_prob: dropout_prob})
     costs += step_cost
     iters += num_steps
     if iters % 10000 == 0:
       print(iters, np.exp(costs / iters))
       writer.add_summary(result, iters)
       writer.flush()
+      print()
   checkpoint_file = ckpt_dir + '/' + model_name + '_epoch_' + str(i)
   saver.save(session, checkpoint_file)

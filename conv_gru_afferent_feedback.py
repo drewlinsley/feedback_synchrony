@@ -31,9 +31,11 @@ stride = [1,1,1]
 pool_size = 2
 output_shape = 1 #regression
 la = 0.01 #l2 regularization for FC layer
+dropout_prob = .5
 channels = 1
 ckpt_dir = './ckpt_dir'
 model_name = 'real_afferent'
+gpu_number = 0
 restore_model = False
 height = im_size[0]
 width = im_size[1]
@@ -63,8 +65,9 @@ Sc = []; Sh = []; state = [];
 hh = [height]
 hc = [prev_channels]
 ## Build Model
-with tf.device('/gpu:3'):
+with tf.device('/gpu:' + str(gpu_number)):
   lr = tf.placeholder(tf.float32, [])
+  keep_prob = tf.placeholder(tf.float32)
   X = tf.placeholder(tf.float32, [batch_size, num_steps, height, width, channels]) #batch,time,height,width,channels
   targets = tf.placeholder(tf.float32, [batch_size]) #replace num_steps with 1 if doing a single prediction
 
@@ -212,7 +215,7 @@ for i in range(epochs):
     by = y[train_idx]
     result, step_cost, _, = session.run([merged, cost, optim],
                            #{X: x, targets: y, lr: 1.0 / (i + 1)})
-                           {X: bx, targets: by})
+                           {X: bx, targets: by, keep_prob: dropout_prob})
     costs += step_cost
     iters += num_steps
     if iters % 10000 == 0:
