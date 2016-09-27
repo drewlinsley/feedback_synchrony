@@ -24,8 +24,8 @@ num_steps = 5
 epochs = 30
 num_afferents = 1
 filters = [40,40,40]
-filter_r = [3,3,3]
-filter_w = [3,3,3]
+filter_r = [11,3,3]
+filter_w = [11,3,3]
 padding = [0,0,0]
 stride = [1,1,1]
 pool_size = 2
@@ -67,7 +67,7 @@ hc = [prev_channels]
 ## Build Model
 with tf.device('/gpu:' + str(gpu_number)):
   lr = tf.placeholder(tf.float32, [])
-  keep_prob = tf.placeholder(tf.float32)
+  #keep_prob = tf.placeholder(tf.float32)
   X = tf.placeholder(tf.float32, [batch_size, num_steps, height, width, channels]) #batch,time,height,width,channels
   targets = tf.placeholder(tf.float32, [batch_size]) #replace num_steps with 1 if doing a single prediction
 
@@ -169,8 +169,8 @@ with tf.device('/gpu:' + str(gpu_number)):
     #loss += 5e-4 + regularizers #tf.reduce_sum(step_loss)
     prev_concat_h = tf.concat(3, state)
   pool_state = tf.nn.max_pool(state[layer],ksize=[1,pool_size,pool_size,1],strides=[1,pool_size,pool_size,1],padding='VALID',name='end_pool')
-  drop_pool_state = tf.nn.dropout(pool_state,keep_prob)
-  res_pool_state = tf.reshape(drop_pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
+  #pool_state = tf.nn.dropout(pool_state,keep_prob)
+  res_pool_state = tf.reshape(pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
   pred = tf.add(tf.matmul(res_pool_state,fc1_weights),fc1_biases)
   regularizers = tf.add(tf.nn.l2_loss(fc1_weights),tf.nn.l2_loss(fc1_biases))
   error_loss = tf.reduce_sum((tf.pow(pred-targets, 2))/ batch_size)
@@ -216,7 +216,8 @@ for i in range(epochs):
     by = y[train_idx]
     result, step_cost, _, = session.run([merged, cost, optim],
                            #{X: x, targets: y, lr: 1.0 / (i + 1)})
-                           {X: bx, targets: by, keep_prob: dropout_prob})
+                           #{X: bx, targets: by, keep_prob: dropout_prob})
+                           {X: bx, targets: by})
     costs += step_cost
     iters += num_steps
     if iters % 10000 == 0:

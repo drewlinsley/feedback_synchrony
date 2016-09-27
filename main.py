@@ -11,7 +11,7 @@ import os
 import model
 
 #Load data
-which_data = 'cluttered_mnist'
+which_data = 'multi_mnist'
 X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size = data_loader.train(which_data)
 X_train_raw = X_train_raw.astype('float32')
 data_mu = np.mean(X_train_raw)

@@ -42,7 +42,7 @@ def train(which_data='cluttered_mnist'):
         from scipy import misc
         from glob import glob
         import re
-        file_dir = '/home/rithesh/Documents/tf/data/multiple_ims'
+        file_dir = 'data/multiple_ims'
         ims = glob(file_dir +'/*.png')
         im_array = []
         im_idx = []

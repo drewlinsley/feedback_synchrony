@@ -4,7 +4,8 @@ __pycache__/
 *$py.class
 /data
 /summaries
-
+/ckpt_dir
+/temp
 # C extensions
 *.so
 

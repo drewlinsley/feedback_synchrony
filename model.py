@@ -178,7 +178,7 @@ def batch_train(session, merged, saver, optim, writer, cost, X, targets, X_train
 	cv_folds = data_size // s.batch_size
 	for i in range(s.epochs):
 	  print('Epoch', i)
-	  x,y = prepare_mnist_data.adding_task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width],'regress') #turn regress into a variable passed from main
+	  x,y = prepare_mnist_data.repeat_adding_task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width],'regress') #turn regress into a variable passed from main
 	  cv_ind = range(data_size)
 	  np.random.shuffle(cv_ind)
 	  cv_ind = np.reshape(cv_ind,[cv_folds,s.batch_size])

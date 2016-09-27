@@ -1,2 +1,6 @@
-model_checkpoint_path: "complex_epoch_0"
-all_model_checkpoint_paths: "complex_epoch_0"
+model_checkpoint_path: "complex_epoch_29"
+all_model_checkpoint_paths: "complex_epoch_25"
+all_model_checkpoint_paths: "complex_epoch_26"
+all_model_checkpoint_paths: "complex_epoch_27"
+all_model_checkpoint_paths: "complex_epoch_28"
+all_model_checkpoint_paths: "complex_epoch_29"

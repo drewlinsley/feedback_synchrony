@@ -1,6 +1,47 @@
 import numpy as np
 import tensorflow as tf
+from matplotlib import pyplot as plt
+from tqdm import tqdm
+import math
 
+def factors(n):    
+    return list(reduce(list.__add__, 
+                ([i, n//i] for i in range(1, int(n**0.5) + 1) if n % i == 0)))
+
+def convert_to_phase(ims):
+    split_size = ims.shape[-1]//2
+    real_ims = ims[:,:,:,:split_size]
+    imag_ims = ims[:,:,:,split_size//2:]
+    phase_ims = np.zeros((ims.shape[0],ims.shape[1],ims.shape[2],split_size))
+    for i in range(split_size):
+        for x in range(real_ims.shape[0]):
+            for y in range(real_ims.shape[1]):
+                phase_ims[x,y,:,i] = math.atan2(np.squeeze(imag_ims[x,y,:,i]),np.squeeze(real_ims[x,y,:,i]))
+    return phase_ims
+
+def im_mosaic(ims,phase):
+    if ims.shape[-2] == 1:
+        pass
+    elif ims.shape[-2] > 1:
+        ims = ims.reshape(ims.shape[0],ims.shape[1],1,ims.shape[2] * ims.shape[3])
+    if phase:
+        ims = convert_to_phase(ims)
+        cm = 'jet'
+    else:
+        cm = 'Greys_r'
+    sp_factors = factors(ims.shape[-1])
+    s1 = sp_factors[np.argmin(np.abs(map(lambda x: x - np.sqrt(ims.shape[-1]),sp_factors)))]
+    s2 = ims.shape[-1] // s1
+    f = plt.figure()
+    for p in tqdm(range(ims.shape[-1])):
+        a = plt.subplot(s1,s2,p+1)
+        plt.imshow(np.squeeze(ims[:,:,:,p]),cmap=cm, vmin=-3.15,vmax=3.15);
+        a.axes.get_xaxis().set_visible(False)
+        a.axes.get_yaxis().set_visible(False)
+    plt.subplots_adjust(wspace=0.01,hspace=0.01,right=0.8)    
+    cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
+    plt.colorbar(cax=cbar_ax)
+    plt.show()
 
 class Map(dict):
     """
