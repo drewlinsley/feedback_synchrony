@@ -4,9 +4,9 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from tensorflow.models.rnn.ptb import reader
-from utils import * #_variable_with_weight_decay
-import prepare_mnist_data
-import data_loader
+from ops.utils import * #_variable_with_weight_decay
+import ops.prepare_mnist_data
+import ops.data_loader
 import os
 
 #Load data
@@ -25,27 +25,50 @@ def build_model(s):
 
 	hh = [s.height]
 	hc = [prev_channels]
+        target_size = [s.batch_size]
+        if s.output_shape == 1:
+            dt = tf.float32
+        else:
+            #target_size = [s.batch_size,s.output_shape]
+            dt = tf.int64
 
 	if s.model_name == 'complex':
-		gate_fun = fix_complex_gates
-		mult_fun = complex_elemwise_mult
+            gate_fun = fix_complex_gates
+            mult_fun = complex_elemwise_mult
+            dtp_fun = tf.matmul#complex_dot_product
+            complex_fun = pass_gate#complex_weight #add synchrony term 
 	elif s.model_name == 'real':
-		gate_fun = pass_gate
-		mult_fun = tf.mul
+            gate_fun = pass_gate
+            mult_fun = tf.mul
+            dtp_fun = tf.matmul
+            complex_fun = pass_gate
 	else: 
-		print('model name is not recognized')
-		sys.exit()
+            print('model name is not recognized')
+            sys.exit()
+ 
 	with tf.device('/gpu:' + str(s.gpu_number)):
 	  lr = tf.placeholder(tf.float32, [])
-	  #keep_prob = tf.placeholder(tf.float32)
-	  X = tf.placeholder(tf.float32, [s.batch_size, s.num_steps, s.height, s.width, s.channels]) #batch,time,height,width,channels
-	  targets = tf.placeholder(tf.float32, [s.batch_size]) #replace num_steps with 1 if doing a single prediction
+          if s.dropout_prob > 0:
+              keep_prob = tf.placeholder(tf.float32)
+	  else:
+              keep_prob = [];
+          X = tf.placeholder(tf.float32, [s.batch_size, s.num_steps, s.height, s.width, s.channels]) #batch,time,height,width,channels
+	  targets = tf.placeholder(dt, target_size) #replace num_steps with 1 if doing a single prediction
 
-	  #FC 
-	  fc1_weights = tf.Variable(  # fully connected, depth 512.
-	      tf.truncated_normal([s.FC_dim, s.output_shape],
-	                          stddev=1.0)) #used to be 0.1 for some reason
-	  fc1_biases = tf.Variable(tf.constant(0.0, shape=[1]))
+	  #FCs
+          fc_dim = (s.height // s.pool_size) **2 * s.filters[-1]
+          fc_weights = []
+          fc_biases = []
+          for f in range(s.num_fc):
+              if f == (s.num_fc-1):
+                  out_dim = s.output_shape
+              else:
+                  out_dim = fc_dim // 5
+              fc_weights.append(tf.Variable(  # fully connected, depth 512.
+              tf.truncated_normal([fc_dim, out_dim],
+                                  stddev=0.10)))
+              fc_biases.append(tf.Variable(tf.constant(0.0, shape=[out_dim])))
+              fc_dim = out_dim
 
 	  #conv lstm
 	  for i in range(0,len(s.filters)):
@@ -96,7 +119,6 @@ def build_model(s):
 	  c = state[0]
 	  prev_concat_h = tf.zeros([s.batch_size,prev_height,prev_height,np.sum(s.filters)])#for now all filters have to be the same size... in the future use up/downsampling
 	  loss = tf.zeros([])
-	  # TODO: prev concat h
 	  for time_step in range(s.num_steps):
 	    h_prev = X[:, time_step, :, :, :]
 	    for layer in range(num_hidden_layers):
@@ -116,22 +138,24 @@ def build_model(s):
 	      f = gate_fun(s.inner_activation(xf + hf))
 	      o = gate_fun(s.inner_activation(xo + ho)) #The original implementation handled the h's seperately
 
-	      # Main contribution of paper:
+	      # Feedback gates:
 	      target_layer = np.min([layer + s.num_afferents, num_hidden_layers])
-	      if layer == target_layer:
-	        gated_prev_timestep = tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') + Ucb[idx]
-	        new_c = s.activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + gated_prev_timestep)
+	      if target_layer > num_hidden_layers - 1:
+		gated_prev_timestep = tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') + Ucb[idx]
+		new_c = s.activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + gated_prev_timestep)
 	      else:
-	        con_range = range(layer,target_layer) #need to adjust the hidden state concat
-	        gates = [s.inner_activation((tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
-	          tf.reduce_sum(tf.reshape((tf.nn.conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
-	        #Gated_prev_timestep is the activations from all afferents weighted by Gates
-	        gated_prev_timestep = [gates[idx - layer] * (tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx])for idx in con_range]
-	        #c is now calculated as tanh(current hidden content + sum of the gated afferents)
-	        new_c = s.activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
+		con_range = range(layer,target_layer+1) #need to adjust the hidden state concat
+		#print(con_range)
+		gates = [s.inner_activation((tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
+		  tf.reduce_sum(tf.reshape((tf.nn.conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
+		#Gated_prev_timestep is the activations from all afferents weighted by Gates
+		gated_prev_timestep = [gates[idx - layer] * (tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx])for idx in con_range]
+		#c is now calculated as tanh(current hidden content + sum of the gated afferents)
+		new_c = s.activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
 	      #Get new h and c as per usual
 	      c = mult_fun(f, c) + mult_fun(i, new_c) #complex multiplication here
-	      state[layer] = mult_fun(o, s.activation(c))
+	      #state[layer] = mult_fun(o, s.activation(c))
+              state[layer] = complex_fun(mult_fun(o, s.activation(c)))
 
 	    #if classsificaiton
 	    #res_pool_state = tf.reshape(pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
@@ -143,13 +167,32 @@ def build_model(s):
 	  pool_state = tf.nn.max_pool(state[layer],ksize=[1,s.pool_size,s.pool_size,1],strides=[1,s.pool_size,s.pool_size,1],padding='VALID',name='end_pool')
 	  #pool_state = tf.nn.dropout(pool_state,keep_prob) #to add dropout... acting weird tho
 	  res_pool_state = tf.reshape(pool_state,[s.batch_size,prev_height//s.pool_size*prev_height//s.pool_size*s.filters[-1]])
-	  pred = tf.add(tf.matmul(res_pool_state,fc1_weights),fc1_biases)
-	  regularizers = tf.add(tf.nn.l2_loss(fc1_weights),tf.nn.l2_loss(fc1_biases))
-	  error_loss = tf.reduce_sum((tf.pow(pred-targets, 2))/ s.batch_size)
-	  reg_loss = s.la * regularizers
-	  cost = error_loss + reg_loss  
-
+          #add an old fashioned LSTM here? (help reduce parameters)
+          res_pool_state = complex_lstm(res_pool_state,s)
+          #add as many FC layers as you want (need to refactor all this code...)
+          for f in range(s.num_fc):
+              if f == (s.num_fc - 1):
+                  if s.output_shape == 1:
+	              pred = tf.add(dtp_fun(res_pool_state,fc_weights[f]),fc_biases[f])
+	              error_loss = tf.reduce_sum((tf.pow(pred-targets, 2))/ s.batch_size)
+                      error_mean = error_loss
+                  else:
+                      pred = tf.add(dtp_fun(res_pool_state,fc_weights[f]),fc_biases[f])
+                      error_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(pred, targets))
+              else:
+                  res_pool_state = tf.add(dtp_fun(res_pool_state,fc_weights[f]),fc_biases[f])
+              regularizers = tf.add(tf.nn.l2_loss(fc_weights[f]),tf.nn.l2_loss(fc_biases[f])) #regularize every layer
+          reg_loss = s.la * regularizers
+          cost = (error_loss + reg_loss) / tf.cast(s.batch_size,tf.float32)
 	tf.scalar_summary("cost", cost)
+	if s.output_shape > 1:
+	    #correct = tf.nn.in_top_k(tf.nn.softmax(pred), targets, 1)
+            correct = tf.to_float(tf.equal(tf.argmax(tf.nn.softmax(pred),1), targets))
+            #correct = tf.to_float(correct)
+            accuracy = tf.reduce_mean(correct)
+            tf.scalar_summary("training_accuracy", accuracy)
+            tf.scalar_summary("validation_accuracy", accuracy)
+
 	tf.image_summary('Wc1',tf.reshape(Wc[0],(s.filters[0],s.filter_r[0],s.filter_r[0],s.channels)))
 	merged = tf.merge_all_summaries()
 	#config = tf.ConfigProto()
@@ -157,44 +200,79 @@ def build_model(s):
 	#config.log_device_placement=True
 	#session = tf.Session(config)
 	session = tf.Session()
-	writer = tf.train.SummaryWriter('summaries/' + s.model_name, session.graph)
+	writer = tf.train.SummaryWriter('summaries/' + s.model_name + s.extra_tag, session.graph)
 
 	# Train Model
 	#optim = tf.train.GradientDescentOptimizer(lr).minimize(cost)
 	optim = tf.train.AdamOptimizer(1e-4).minimize(cost)
+        #optim = tf.train.AdamOptimizer(1e-4)
+        #global_step = tf.Variable(0,name='global_step',trainable=False)
+        #grads_and_ars = optimizer.compute_gradients(cost)
+        #optim = optim.apply_gradients(grads_and_vars, global_step=global_step)
 	saver = tf.train.Saver()
 	init_vars = tf.initialize_all_variables()
 
-	return session, init_vars, merged, saver, optim, writer, cost, X, targets#, keep_prob
+	return session, init_vars, merged, saver, optim, writer, cost, keep_prob, X, targets, Wc, Wg, Uc, Ug, pred, accuracy#, keep_prob
 
-
-def batch_train(session, merged, saver, optim, writer, cost, X, targets, X_train_raw, y_train_temp, s):
+def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy, X, targets, X_train_raw, y_train_temp, X_test_raw, y_test_temp, s):
 	#Consider clipping
 	#grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
 	#                                     config.max_grad_norm)
+             
+        new_ckpt_dir = s.ckpt_dir + '/' + s.model_name + s.extra_tag + '/'
+        if not os.path.exists(new_ckpt_dir):
+            os.makedirs(new_ckpt_dir)
+
+        if s.output_shape == 1:
+            roc = 'regress'
+            task = prepare_mnist_data.repeat_adding_task
+        else:
+            roc = 'classify'
+            task = prepare_mnist_data.repeat_task
 	costs = 0.0
 	iters = 0
+	val_iters = 0
 	data_size = X_train_raw.shape[0]
+        val_data_size = X_test_raw.shape[0]
 	cv_folds = data_size // s.batch_size
+        val_cv_folds = val_data_size // s.batch_size
 	for i in range(s.epochs):
 	  print('Epoch', i)
-	  x,y = prepare_mnist_data.repeat_adding_task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width],'regress') #turn regress into a variable passed from main
+	  x,y = task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width,s.channels],roc) #turn regress into a variable passed from main
+          vx,vy = task(X_test_raw, y_test_temp,s.num_steps,data_size,[s.height,s.width,s.channels],roc)
 	  cv_ind = range(data_size)
 	  np.random.shuffle(cv_ind)
+          cv_ind = cv_ind[:(cv_folds*s.batch_size)]
 	  cv_ind = np.reshape(cv_ind,[cv_folds,s.batch_size])
+          val_cv_ind = range(val_data_size)
+          np.random.shuffle(val_cv_ind)
+          val_cv_ind = val_cv_ind[:(val_cv_folds*s.batch_size)]
+          val_cv_ind = np.reshape(val_cv_ind,[val_cv_folds,s.batch_size])
 	  for idx in range(cv_folds):
 	    train_idx = cv_ind[idx,:]
 	    bx = x[train_idx,:,:,:,:]
 	    by = y[train_idx]
-	    result, step_cost, _, = session.run([merged, cost, optim],
-	                           #{X: x, targets: y, lr: 1.0 / (i + 1)})
-	                           #{X: bx, targets: by, keep_prob: s.dropout_prob})
-	                           {X: bx, targets: by})
+            if s.dropout_prob > 0:
+      	        result, step_cost, _, train_acc = session.run([merged, cost, optim, accuracy],
+	                           {X: bx, targets: by, keep_prob: s.dropout_prob})
+            else:
+                result, step_cost, _, train_acc= session.run([merged, cost, optim, accuracy],
+                                   {X: bx, targets: by})
 	    costs += step_cost
 	    iters += s.num_steps
-	    if iters % 10000 == 0:
-	      print(iters, np.exp(costs / iters))
+	    if iters % 1000 == 0:
+	      #print(iters, np.exp(costs / iters), train_acc)
+              print(iters, costs/iters, train_acc)
 	      writer.add_summary(result, iters)
+              val_idx = val_cv_ind[idx%val_cv_folds,:]
+              if s.dropout_prob > 0:
+                  val_result, val_cost, _, val_acc = session.run([merged, cost, optim, accuracy],
+                                   {X: vx[val_idx,:,:,:,:], targets: vy[val_idx], keep_prob: 1})
+              else:
+                  val_result, val_cost, _, val_acc = session.run([merged, cost, optim, accuracy],
+                                   {X: vx[val_idx,:,:,:,:], targets: vy[val_idx]})
+              writer.add_summary(val_result,iters)
+              print('validation cost/acc', val_cost, val_acc)
 	      writer.flush()
-	  checkpoint_file = s.ckpt_dir + '/' + s.model_name + '_epoch_' + str(i)
+	  checkpoint_file = new_ckpt_dir +  s.model_name + s.extra_tag + '_epoch_' + str(i)
 	  saver.save(session, checkpoint_file)

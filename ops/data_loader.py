@@ -14,10 +14,12 @@ def train(which_data='cluttered_mnist'):
         y_test_temp = data['y_test_temp']
         train_num = data['train_num']
         im_size = data['im_size']
+        cats = 1
     elif which_data == 'mnist':
         (X_train_raw, y_train_temp), (X_test_raw, y_test_temp) = mnist.load_data()
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
+        cats = 1
     elif which_data == 'cluttered_mnist':
         from scipy import misc
         from glob import glob
@@ -38,6 +40,7 @@ def train(which_data='cluttered_mnist'):
         y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::]
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
+        cats = 1
     elif which_data == 'multi_mnist':
         from scipy import misc
         from glob import glob
@@ -58,11 +61,36 @@ def train(which_data='cluttered_mnist'):
         y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::]
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
+        cats = 1
+    elif which_data == 'coco':
+        from scipy import misc
+        from glob import glob
+        import re
+        file_dir = 'data/coco'
+        ims = glob(file_dir +'/*.jpg')
+        ims = np.asarray(ims)
+        np.random.shuffle(ims)
+        im_array = []
+        im_idx = []
+        num_ims = 100000
+        for i in tqdm(range(num_ims)):
+            it_name = ims[i]
+            im_array.append(misc.imresize(misc.imread(it_name),[40,40]))
+            im_idx.append(int(re.split('ims/',re.split('.jpg',re.split('_',it_name)[-1])[0])[-1]))
+        im_array = np.asarray(im_array)
+        im_idx = np.asarray(im_idx)
+        X_train_raw = im_array[0:int(np.round(0.9*len(im_array))),:,:]
+        y_train_temp = im_idx[0:int(np.round(0.9*len(im_array)))]
+        X_test_raw = im_array[int(np.round(0.9*len(im_array)))::,:,:]
+        y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::]
+        train_num = X_train_raw.shape[0]
+        im_size = X_train_raw.shape[-2:]
+        cats = np.unique(im_idx)
 
-    return X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size
+    return X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size,cats
 
 def test(X_test_raw,y_test_temp,examplesPer,maxToAdd,channels,im_size,classify_or_regress):
-    y_test        = []    
+    y_test        = []
     X_test     = np.zeros((examplesPer,maxToAdd,channels,im_size[0],im_size[1]))
     for i in range(0,examplesPer):
         output      = np.zeros((maxToAdd,channels,im_size[0],im_size[1]))
@@ -75,8 +103,9 @@ def test(X_test_raw,y_test_temp,examplesPer,maxToAdd,channels,im_size,classify_o
         y_test.append(np.sum(exampleY))
 
     X_test  = np.array(X_test)
-    y_test  = np.array(y_test)       
+    y_test  = np.array(y_test)
     if classify_or_regress == 'classify':
         y_test = np.equal.outer(y_test, np.arange(maxToAdd * 9)).astype(np.float)
-    
+
     return X_test,y_test
+

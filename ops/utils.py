@@ -35,7 +35,10 @@ def im_mosaic(ims,phase):
     f = plt.figure()
     for p in tqdm(range(ims.shape[-1])):
         a = plt.subplot(s1,s2,p+1)
-        plt.imshow(np.squeeze(ims[:,:,:,p]),cmap=cm, vmin=-3.15,vmax=3.15);
+	if phase:
+            plt.imshow(np.squeeze(ims[:,:,:,p]),cmap=cm, vmin=-3.15,vmax=3.15);
+        else:
+            plt.imshow(np.squeeze(ims[:,:,:,p]),cmap=cm)
         a.axes.get_xaxis().set_visible(False)
         a.axes.get_yaxis().set_visible(False)
     plt.subplots_adjust(wspace=0.01,hspace=0.01,right=0.8)    
@@ -135,15 +138,17 @@ def complex_bound(a, axis=-1):
   d = tf.maximum(np.float32(1), tf.sqrt(a_both[0] * a_both[0] + a_both[1] * a_both[1]))
   r_real = a_both[0] / d
   r_imag = a_both[1] / d
-  return tf.concat(la,[r_real, r_imag])
+  return tf.concat(filt_dim,[r_real, r_imag])
 
-def complex_dot(a, b):
+def complex_dot_product(a, b):
   a_shape = a.get_shape()
-  num_filts = a_shape[-1]
   filt_dim = len(a_shape) - 1
   a_both = tf.split(filt_dim,2,a)
-  b_both = tf.split(filt_dim,2,b)
-  r_real = tf.dot(a_both[0], b_both[0]) - tf.dot(a_both[1], b_both[1])
-  r_imag = tf.dot(a_both[0], b_both[1]) + tf.dot(a_both[1], b_both[0])
-  return tf.concat(la,[r_real, r_imag])
+  b_both = tf.split(filt_dim-1,2,b)
+  r_real = tf.matmul(a_both[0], b_both[0]) - tf.matmul(a_both[1], b_both[1])
+  r_imag = tf.matmul(a_both[0], b_both[1]) + tf.matmul(a_both[1], b_both[0])
+  import ipdb;ipdb.set_trace()
+  return tf.concat(filt_dim,[r_real, r_imag])
 
+def deconv():
+   pass 
