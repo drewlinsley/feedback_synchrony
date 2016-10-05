@@ -1,5 +1,5 @@
 import numpy as np
-
+from sklearn.preprocessing import OneHotEncoder
 
 
 def adding_task(X_train_raw,y_train_temp,maxToAdd,examplesPer,im_size,classify_or_regress):
@@ -78,7 +78,6 @@ def repeat_adding_task(X_train_raw,y_train_temp,maxToAdd,examplesPer,im_size,cla
 def repeat_task(X_train_raw,y_train_temp,maxToAdd,examplesPer,im_size,classify_or_regress):
     X_train       = []
     y_train       = []
-
     X_train     = np.zeros((examplesPer,maxToAdd,im_size[0],im_size[1],1))
 
     for i in range(0,examplesPer):
@@ -90,12 +89,13 @@ def repeat_task(X_train_raw,y_train_temp,maxToAdd,examplesPer,im_size,classify_o
         indices     = np.repeat(np.random.choice(X_train_raw.shape[0],size=1),maxToAdd)
         example     = X_train_raw[indices]
         #sum up the outputs for new output
-        exampleY    = y_train_temp[indices]
+        exampleY    = y_train_temp[indices,:]
         X_train[i,:,:,:,:] = example[:,:,:,None]
         y_train.append((exampleY[0]))
 
     y_train     = np.array(y_train)
-    #if classify_or_regress == 'classify':
-    #    y_train = np.equal.outer(y_train, np.arange(maxToAdd * 9)).astype(np.float)
+    if classify_or_regress > 1:
+        pass
+        #y_train = enc.transform(y_train.reshape(-1, 1)-1).toarray()#I think use -1 to correct for indexing at 1 instead of 0 #y_train = np.equal.outer(y_train, np.arange(maxToAdd * 9)).astype(np.float)
     return X_train, y_train
 

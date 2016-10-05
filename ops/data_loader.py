@@ -4,6 +4,7 @@ from scipy import misc
 import re
 #from keras.datasets import mnist
 from tqdm import tqdm
+from skimage.color import rgb2gray
 
 def train(which_data='cluttered_mnist'):
     if which_data == 'adding_mnist':
@@ -15,11 +16,15 @@ def train(which_data='cluttered_mnist'):
         train_num = data['train_num']
         im_size = data['im_size']
         cats = 1
+        num_channels = 1
+
     elif which_data == 'mnist':
         (X_train_raw, y_train_temp), (X_test_raw, y_test_temp) = mnist.load_data()
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
         cats = 1
+        num_channels = 1
+
     elif which_data == 'cluttered_mnist':
         from scipy import misc
         from glob import glob
@@ -41,6 +46,8 @@ def train(which_data='cluttered_mnist'):
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
         cats = 1
+        num_channels = 1
+
     elif which_data == 'multi_mnist':
         from scipy import misc
         from glob import glob
@@ -62,32 +69,42 @@ def train(which_data='cluttered_mnist'):
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
         cats = 1
+        num_channels = 1        
+
     elif which_data == 'coco':
         from scipy import misc
         from glob import glob
         import re
+        from sklearn.preprocessing import OneHotEncoder
         file_dir = 'data/coco'
         ims = glob(file_dir +'/*.jpg')
         ims = np.asarray(ims)
         np.random.shuffle(ims)
         im_array = []
         im_idx = []
-        num_ims = 100000
+        num_ims = 120000
+        #num_ims = 3000
         for i in tqdm(range(num_ims)):
             it_name = ims[i]
-            im_array.append(misc.imresize(misc.imread(it_name),[40,40]))
+            it_img = misc.imresize(misc.imread(it_name),[50,50])
+            if len(it_img.shape) > 2:
+                it_img = rgb2gray(it_img)
+            im_array.append(it_img)
             im_idx.append(int(re.split('ims/',re.split('.jpg',re.split('_',it_name)[-1])[0])[-1]))
         im_array = np.asarray(im_array)
         im_idx = np.asarray(im_idx)
+        enc = OneHotEncoder()#np.unique(y_train_temp))
+        im_idx = enc.fit_transform(im_idx.reshape(-1, 1)).toarray()
         X_train_raw = im_array[0:int(np.round(0.9*len(im_array))),:,:]
-        y_train_temp = im_idx[0:int(np.round(0.9*len(im_array)))]
+        y_train_temp = im_idx[0:int(np.round(0.9*len(im_array))),:]
         X_test_raw = im_array[int(np.round(0.9*len(im_array)))::,:,:]
-        y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::]
+        y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::,:]
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
-        cats = np.unique(im_idx)
+        cats = im_idx.shape[-1]
+        num_channels = 1
 
-    return X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size,cats
+    return X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size,num_channels,cats
 
 def test(X_test_raw,y_test_temp,examplesPer,maxToAdd,channels,im_size,classify_or_regress):
     y_test        = []
@@ -109,3 +126,15 @@ def test(X_test_raw,y_test_temp,examplesPer,maxToAdd,channels,im_size,classify_o
 
     return X_test,y_test
 
+def normalize(X_train_raw,zm=True,uv=True):
+    if zm:
+        data_mu = np.mean(X_train_raw)
+    else:
+        data_mu = []
+    if uv:
+        data_std = np.std(X_train_raw)
+    else:
+        data_std = []
+    X_train_raw -= data_mu
+    X_train_raw /= data_std
+    return X_train_raw,data_mu,data_std

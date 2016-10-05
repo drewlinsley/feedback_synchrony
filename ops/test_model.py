@@ -5,8 +5,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.models.rnn.ptb import reader
 from ops.utils import * #_variable_with_weight_decay
-from ops import prepare_mnist_data
-from ops import data_loader
+import ops.prepare_mnist_data
+import ops.data_loader
 import os
 
 #Load data
@@ -21,7 +21,7 @@ def build_model(s):
 	Wo =[]; Uo = []; Wob = []; Uob = []; 
 	Wc =[]; Uc = []; Wcb = []; Ucb = []; 
 	Wg =[]; Ug = []; Wgb =[]; Ugb = []; 
-	Sw = []; state = [];
+	Sc = []; Sh = []; state = [];
 
 	hh = [s.height]
 	hc = [prev_channels]
@@ -29,15 +29,10 @@ def build_model(s):
         if s.output_shape == 1:
             dt = tf.float32
         else:
-            target_size = [s.batch_size,s.output_shape]
-            dt = tf.float32#.int64
+            #target_size = [s.batch_size,s.output_shape]
+            dt = tf.int64
 
 	if s.model_name == 'complex':
-            gate_fun = fix_complex_gates
-            mult_fun = complex_elemwise_mult
-            dtp_fun = tf.matmul#complex_dot_product
-            complex_fun = complex_weight #add synchrony term 
-        elif s.model_name == 'no_sync_comple':
             gate_fun = fix_complex_gates
             mult_fun = complex_elemwise_mult
             dtp_fun = tf.matmul#complex_dot_product
@@ -59,21 +54,6 @@ def build_model(s):
               keep_prob = [];
           X = tf.placeholder(tf.float32, [s.batch_size, s.num_steps, s.height, s.width, s.channels]) #batch,time,height,width,channels
 	  targets = tf.placeholder(dt, target_size) #replace num_steps with 1 if doing a single prediction
-
-	  #FCs
-          fc_dim = (s.height // s.pool_size) **2 * s.filters[-1]
-          fc_weights = []
-          fc_biases = []
-          for f in range(s.num_fc):
-              if f == (s.num_fc-1):
-                  out_dim = s.output_shape
-              else:
-                  out_dim = fc_dim // 5
-              fc_weights.append(tf.Variable(  # fully connected, depth 512.
-              tf.truncated_normal([fc_dim, out_dim],
-                                  stddev=0.10)))
-              fc_biases.append(tf.Variable(tf.constant(0.0, shape=[out_dim])))
-              fc_dim = out_dim
 
 	  #conv lstm
 	  for i in range(0,len(s.filters)):
@@ -102,12 +82,16 @@ def build_model(s):
 	    Uob.append(tf.Variable(tf.constant(0.0, shape=[s.filters[i]],dtype=tf.float32),trainable=True,name="Uob_%d" % i))
 	    # Gated feedback (ala Bengio group, 2015)
 	    Wg.append(tf.get_variable(name="Wg_%d" % i, shape=in_size_w, initializer=s.init())) #vector with current filter size... scalar weight on activation maps need to reshape into a tensor
-	    Ug.append(tf.get_variable(name="Ug_%d" % i, shape=[s.filter_r[i], s.filter_w[i], np.sum(s.filters),np.sum(s.filters)],initializer=s.inner_init())) #vector with num_filters size... scalar weight on activation maps need to reshape into a tensor.... accepts all layers... fix this
+            if i < len(s.filters) - 1:
+                Ug_shape = np.sum(s.filters[i:s.num_afferents+1])
+            else:
+                Ug_shape = s.filters[i] #used to be np.sum(s.filters)
+	    Ug.append(tf.get_variable(name="Ug_%d" % i, shape=[s.filter_r[i], s.filter_w[i], Ug_shape,Ug_shape],initializer=s.inner_init())) #vector with num_filters size... scalar weight on activation maps need to reshape into a tensor.... accepts all layers... fix this
 	    Wgb.append(tf.Variable(tf.constant(0.0, shape=[s.filters[i]],dtype=tf.float32),trainable=True,name="Wgb_%d" % i))
-	    Ugb.append(tf.Variable(tf.constant(0.0, shape=[np.sum(s.filters)],dtype=tf.float32),trainable=True,name="Ugb_%d" % i))
+	    Ugb.append(tf.Variable(tf.constant(0.0, shape=[Ug_shape],dtype=tf.float32),trainable=True,name="Ugb_%d" % i))
 	    prev_channels = s.filters[i]
 	    # Add synchrony here
-	    Sw.append(tf.Variable(tf.constant(0.5, shape=[2],dtype=tf.float32),trainable=True,name="Sw_%d" % i))
+	    #Sc.append(tf.Variable(tf.constant(0.5, shape=[2],dtype=tf.float32),trainable=True,name="Sc_%d" % i))
 	    #Sh.append(tf.Variable(tf.constant(0.5, shape=[2],dtype=tf.float32),trainable=True,name="Sh_%d" % i))
 	    # Preallocate the state
 	    state.append(tf.zeros([s.batch_size,prev_height,prev_height,prev_channels])) #Consider concatenating Weight matrices... Should be much faster
@@ -122,7 +106,8 @@ def build_model(s):
 	  #Start the RNN loop
 	  num_hidden_layers = len(s.filters)
 	  c = state[0]
-	  prev_concat_h = tf.zeros([s.batch_size,prev_height,prev_height,np.sum(s.filters)])#for now all filters have to be the same size... in the future use up/downsampling
+	  #prev_concat_h = tf.zeros([s.batch_size,prev_height,prev_height,np.sum(s.filters)])#for now all filters have to be the same size... in the future use up/downsampling
+          prev_concat_h = [[tf.zeros([s.batch_size,prev_height,prev_height,s.filters[idx]])] for idx in range(num_hidden_layers)] #for now all filters have to be the same size... in the future use up/downsampling
 	  loss = tf.zeros([])
 	  for time_step in range(s.num_steps):
 	    h_prev = X[:, time_step, :, :, :]
@@ -151,8 +136,18 @@ def build_model(s):
 	      else:
 		con_range = range(layer,target_layer+1) #need to adjust the hidden state concat
 		#print(con_range)
-		gates = [s.inner_activation((tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
-		  tf.reduce_sum(tf.reshape((tf.nn.conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
+                import ipdb;ipdb.set_trace()
+                gates = []
+                for idx in con_range:
+                    c1 = tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]
+                    c2 = tf.nn.conv2d(tf.squeeze(tf.concat(4,prev_concat_h[idx:idx+2])), Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]
+                    res_c2 = []
+                    for il in range(idx,idx+2):
+                       #need to figure out how to upsample other layers 
+    		    res_c2 = tf.reshape(c2,(s.batch_size,prev_height,prev_height,np.sum(s.filters[idx:idx+2]),s.num_afferents+1))
+    		    sum_c2 = tf.reduce_sum(res_c2,4)
+    		    act_c = s.inner_activation(c1 + sum_c2)
+    		    gates.append(act_c)
 		#Gated_prev_timestep is the activations from all afferents weighted by Gates
 		gated_prev_timestep = [gates[idx - layer] * (tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx])for idx in con_range]
 		#c is now calculated as tanh(current hidden content + sum of the gated afferents)
@@ -160,7 +155,7 @@ def build_model(s):
 	      #Get new h and c as per usual
 	      c = mult_fun(f, c) + mult_fun(i, new_c) #complex multiplication here
 	      #state[layer] = mult_fun(o, s.activation(c))
-              state[layer] = complex_fun(mult_fun(o, s.activation(c)),Sw)
+              state[layer] = complex_fun(mult_fun(o, s.activation(c)))
 
 	    #if classsificaiton
 	    #res_pool_state = tf.reshape(pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
@@ -168,10 +163,29 @@ def build_model(s):
 	    #step_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, targets[:, time_step])
 	    #regularizers = (tf.nn.l2_loss(fc1_weights) + tf.nn.l2_loss(fc1_biases))
 	    #loss += 5e-4 + regularizers #tf.reduce_sum(step_loss)
-	    prev_concat_h = tf.concat(3, state)
+	    prev_concat_h = state#tf.concat(3, state)
+
+          #FCs
+          import ipdb;ipdb.set_trace()
+          fc_dim = (s.height // s.pool_size) **2 * s.filters[-1]
+          fc_weights = []
+          fc_biases = []
+          for f in range(s.num_fc):
+              if f == (s.num_fc-1):
+                  out_dim = s.output_shape
+              else:
+                  out_dim = fc_dim // 5
+              fc_weights.append(tf.Variable(  # fully connected, depth 512.
+              tf.truncated_normal([fc_dim, out_dim],
+                                  stddev=0.10)))
+              fc_biases.append(tf.Variable(tf.constant(0.0, shape=[out_dim])))
+              fc_dim = out_dim
+
 	  pool_state = tf.nn.max_pool(state[layer],ksize=[1,s.pool_size,s.pool_size,1],strides=[1,s.pool_size,s.pool_size,1],padding='VALID',name='end_pool')
 	  #pool_state = tf.nn.dropout(pool_state,keep_prob) #to add dropout... acting weird tho
 	  res_pool_state = tf.reshape(pool_state,[s.batch_size,prev_height//s.pool_size*prev_height//s.pool_size*s.filters[-1]])
+          #add an old fashioned LSTM here? (help reduce parameters)
+          res_pool_state = complex_lstm(res_pool_state,s)
           #add as many FC layers as you want (need to refactor all this code...)
           for f in range(s.num_fc):
               if f == (s.num_fc - 1):
@@ -181,9 +195,7 @@ def build_model(s):
                       error_mean = error_loss
                   else:
                       pred = tf.add(dtp_fun(res_pool_state,fc_weights[f]),fc_biases[f])
-                      error_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred,targets))
-                      #pred = tf.nn.softmax(tf.add(dtp_fun(res_pool_state,fc_weights[f]),fc_biases[f]))
-                      #error_loss = -tf.reduce_sum(targets*tf.log(tf.clip_by_value(pred,1e-10,1.0)))#tf.log(tf.clip_by_value(pred,1e-10,1.0))#tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(pred, targets))
+                      error_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(pred, targets))
               else:
                   res_pool_state = tf.add(dtp_fun(res_pool_state,fc_weights[f]),fc_biases[f])
               regularizers = tf.add(tf.nn.l2_loss(fc_weights[f]),tf.nn.l2_loss(fc_biases[f])) #regularize every layer
@@ -192,7 +204,7 @@ def build_model(s):
 	tf.scalar_summary("cost", cost)
 	if s.output_shape > 1:
 	    #correct = tf.nn.in_top_k(tf.nn.softmax(pred), targets, 1)
-            correct = tf.to_float(tf.equal(tf.argmax(pred,1), tf.argmax(targets,1)))
+            correct = tf.to_float(tf.equal(tf.argmax(tf.nn.softmax(pred),1), targets))
             #correct = tf.to_float(correct)
             accuracy = tf.reduce_mean(correct)
             tf.scalar_summary("training_accuracy", accuracy)
@@ -229,10 +241,10 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
             os.makedirs(new_ckpt_dir)
 
         if s.output_shape == 1:
-            #roc = 'regress'
+            roc = 'regress'
             task = prepare_mnist_data.repeat_adding_task
         else:
-            #roc = 'classify'
+            roc = 'classify'
             task = prepare_mnist_data.repeat_task
 	costs = 0.0
 	iters = 0
@@ -243,8 +255,8 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
         val_cv_folds = val_data_size // s.batch_size
 	for i in range(s.epochs):
 	  print('Epoch', i)
-	  x,y = task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width,s.channels],s.output_shape) #turn regress into a variable passed from main
-          vx,vy = task(X_test_raw, y_test_temp,s.num_steps,data_size,[s.height,s.width,s.channels],s.output_shape)
+	  x,y = task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width,s.channels],roc) #turn regress into a variable passed from main
+          vx,vy = task(X_test_raw, y_test_temp,s.num_steps,data_size,[s.height,s.width,s.channels],roc)
 	  cv_ind = range(data_size)
 	  np.random.shuffle(cv_ind)
           cv_ind = cv_ind[:(cv_folds*s.batch_size)]

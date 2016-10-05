@@ -5,8 +5,12 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.models.rnn.ptb import reader
 import os
-from ops import data_loader, prepare_mnist_data, model 
+from ops import data_loader, prepare_mnist_data 
+from ops import model
+#from ops import test_model as model
 from ops.utils import *
+import time
+
 #Set output directories
 meta_output = './meta_output'
 if not os.path.exists(meta_output):
@@ -18,11 +22,11 @@ X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size,num_channels,c
 X_train_raw,data_mu,data_std = data_loader.normalize(X_train_raw,zm=True,uv=True)
 
 # Model hyperparameters/training parameters
-pool_size = 2
-filters = [80,80,80]
+pool_size = 2#[2,2,2]#2 
+filters = [60,60,60]#[128,64,32]#[60,60,60]
 settings = {'batch_size':30,
 'num_steps':5,
-'epochs':50,
+'epochs':30,
 'num_afferents':1, #set to some # > # of layers for fully connected
 'filters':filters,
 'filter_r':[7,3,3],
@@ -35,10 +39,10 @@ settings = {'batch_size':30,
 'dropout_prob':.2,
 'channels':num_channels,
 'ckpt_dir':'./ckpt_dir',
-'model_name':'complex', #real or complex
-'extra_tag':'_' + which_data + '_',
+'model_name':'complex',#'no_sync_complex', #real or complex
+'extra_tag':'_' + which_data + '_' + time.strftime('%H:%M:%S'),
 'gpu_number':0, #keep at 0 unless using multi-gpu
-'restore_model':False,
+'restore_model':True,
 'height':im_size[0],
 'width':im_size[1],
 'num_fc':1,
@@ -59,6 +63,8 @@ if s.restore_model == True:
   ckpt = tf.train.get_checkpoint_state(ckpt_dir)
   saver.restore(session,ckpt.model_checkpoint_path)
 
+import ipdb;
+ipdb.set_trace()
 #Train model
 session, result = model.batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy, X, targets, X_train_raw, y_train_temp, X_test_raw, y_test_temp, s)
 

@@ -103,7 +103,7 @@ def fix_complex_gates(a,axis=-1):
   a_comb = tf.minimum(both_splits[0],both_splits[1]) #real/imaginary
   return tf.concat(filt_dim,[a_comb,a_comb])
 
-def pass_gate(a):
+def pass_gate(a,b=None):
   return a
 
 def real_mult(a,b,axis=-1):
@@ -150,5 +150,26 @@ def complex_dot_product(a, b):
   import ipdb;ipdb.set_trace()
   return tf.concat(filt_dim,[r_real, r_imag])
 
+def upsample(image,in_size,out_size,align_corners=False):
+  if in_size == out_size:
+     out = pass_gate
+  else:
+     out = tf.image.resize_nearest_neighbor(image,size,align_corners)
+  return out
+
 def deconv():
    pass 
+
+def real_stack(act):
+  filt_dim = len(act) - 1
+  a = tf.split(filt_dim,2,act)
+  return tf.concat(filt_dim[a,a])
+
+def complex_fun(act,synch):
+  r_act = real_stack(act)
+  return synchronize(r_act,act,synch)
+
+def synchronize(re,co,sy):
+  return tf.add(tf.mul(re,sy[0]),tf.mul(co,sy[1]))
+
+
