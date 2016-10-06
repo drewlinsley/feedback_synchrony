@@ -161,15 +161,28 @@ def deconv():
    pass 
 
 def real_stack(act):
-  filt_dim = len(act) - 1
+  a_shape = act.get_shape()
+  filt_dim = len(a_shape) - 1
   a = tf.split(filt_dim,2,act)
-  return tf.concat(filt_dim[a,a])
+  return tf.concat(filt_dim,[a,a])
 
-def complex_fun(act,synch):
-  r_act = real_stack(act)
-  return synchronize(r_act,act,synch)
+def modulus(act):
+  a_shape = act.get_shape()
+  filt_dim = len(a_shape) - 1
+  a = tf.split(filt_dim,2,act) 
+  m = tf.add(tf.square(a[0]),tf.square(a[1])) 
+  return m#tf.concat(filt_dim,[m,m])
 
-def synchronize(re,co,sy):
-  return tf.add(tf.mul(re,sy[0]),tf.mul(co,sy[1]))
+def complex_comb(cplx_act,synch):
+  real_act = modulus(cplx_act)
+  return synchronize(real_act,cplx_act,synch)
+
+def synchronize(modulus,cmplx,sy):
+  c_shape = cmplx.get_shape()
+  filt_dim = len(c_shape) - 1
+  rc = tf.split(filt_dim,2,cmplx) #real part of the complex valued weights
+  m = tf.add(modulus,rc[0]) #"classic" term
+  return tf.concat(filt_dim,tf.mul(m,sy[0]),tf.mul(rc[1],sy[1]))
+  #return tf.add(tf.mul(re,sy[0]),tf.mul(cmplx,sy[1])) #weighted combo. can learn this in the future
 
 

@@ -14,6 +14,8 @@ def build_model(s):
 	#Initialize some variables
 	if not os.path.exists(s.ckpt_dir):
 	    os.makedirs(s.ckpt_dir)
+        if not os.path.exists('summaries/' + s.model_name + s.extra_tag):
+            os.makedirs('summaries/' + s.model_name + s.extra_tag)
 	prev_channels = s.channels
 	prev_height = s.height
 	Wi =[]; Ui = []; Wib = []; Uib = []; 
@@ -36,8 +38,8 @@ def build_model(s):
             gate_fun = fix_complex_gates
             mult_fun = complex_elemwise_mult
             dtp_fun = tf.matmul#complex_dot_product
-            complex_fun = complex_weight #add synchrony term 
-        elif s.model_name == 'no_sync_comple':
+            complex_fun = complex_comb #add synchrony term 
+        elif s.model_name == 'no_sync_complex':
             gate_fun = fix_complex_gates
             mult_fun = complex_elemwise_mult
             dtp_fun = tf.matmul#complex_dot_product
@@ -160,7 +162,7 @@ def build_model(s):
 	      #Get new h and c as per usual
 	      c = mult_fun(f, c) + mult_fun(i, new_c) #complex multiplication here
 	      #state[layer] = mult_fun(o, s.activation(c))
-              state[layer] = complex_fun(mult_fun(o, s.activation(c)),Sw)
+              state[layer] = complex_fun(mult_fun(o, s.activation(c)),Sw[layer])
 
 	    #if classsificaiton
 	    #res_pool_state = tf.reshape(pool_state,[batch_size,prev_height//pool_size*prev_height//pool_size*filters[-1]])
@@ -205,7 +207,7 @@ def build_model(s):
 	#config.log_device_placement=True
 	#session = tf.Session(config)
 	session = tf.Session()
-	writer = tf.train.SummaryWriter('summaries/' + s.model_name + s.extra_tag, session.graph)
+	writer = tf.train.SummaryWriter(os.path.join('experiments',+ s.model_name + s.extra_tag), session.graph)
 
 	# Train Model
 	#optim = tf.train.GradientDescentOptimizer(lr).minimize(cost)

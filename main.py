@@ -10,6 +10,7 @@ from ops import model
 #from ops import test_model as model
 from ops.utils import *
 import time
+from glob import glob
 
 #Set output directories
 meta_output = './meta_output'
@@ -40,9 +41,9 @@ settings = {'batch_size':30,
 'channels':num_channels,
 'ckpt_dir':'./ckpt_dir',
 'model_name':'complex',#'no_sync_complex', #real or complex
-'extra_tag':'_' + which_data + '_' + time.strftime('%H:%M:%S'),
+'extra_tag':'_' + which_data + '_' + time.strftime('%H_%M_%S'),
 'gpu_number':0, #keep at 0 unless using multi-gpu
-'restore_model':True,
+'restore_model':False,#True,
 'height':im_size[0],
 'width':im_size[1],
 'num_fc':1,
@@ -60,11 +61,10 @@ s = Map(settings)
 session, init_vars, merged, saver, optim, writer, cost, keep_prob, X, targets, Wc, Uc, Wg, Ug, pred, accuracy = model.build_model(s)
 session.run(init_vars)
 if s.restore_model == True:
-  ckpt = tf.train.get_checkpoint_state(ckpt_dir)
-  saver.restore(session,ckpt.model_checkpoint_path)
+  ckpt = s.ckpt_dir + '/' + s.model_name + s.extra_tag
+  ckpts = sorted(glob(ckpt + '/*')) 
+  saver.restore(session,ckpts[-1])
 
-import ipdb;
-ipdb.set_trace()
 #Train model
 session, result = model.batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy, X, targets, X_train_raw, y_train_temp, X_test_raw, y_test_temp, s)
 
