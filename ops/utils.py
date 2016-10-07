@@ -93,96 +93,114 @@ def orthogonal_initializer(scale = 1.1):
     return _initializer
 
 def slice_for_axis(axis, s):
-  return (slice(None),) * axis + (s,)
+    return (slice(None),) * axis + (s,)
 
 def fix_complex_gates(a,axis=-1):
-  a_shape = a.get_shape()
-  num_filts = a_shape[-1]
-  filt_dim = len(a_shape) - 1
-  both_splits = tf.split(filt_dim,2,a)
-  a_comb = tf.minimum(both_splits[0],both_splits[1]) #real/imaginary
-  return tf.concat(filt_dim,[a_comb,a_comb])
+    a_shape = a.get_shape()
+    num_filts = a_shape[-1]
+    filt_dim = len(a_shape) - 1
+    both_splits = tf.split(filt_dim,2,a)
+    a_comb = tf.minimum(both_splits[0],both_splits[1]) #real/imaginary
+    return tf.concat(filt_dim,[a_comb,a_comb])
 
 def pass_gate(a,b=None):
-  return a
+    return a
 
-def real_mult(a,b,axis=-1):
-  a_shape = a.get_shape()
-  num_filts = a_shape[-1]
-  filt_dim = len(a_shape) - 1
-  a_real = tf.split(filt_dim,2,a)[0]
-  b_real = tf.split(filt_dim,2,b)[0]
-  return tf.mul(a_real,b_real)
-
-def slice_for_axis(axis, s):
-  return (slice(None),) * axis + (s,)
+def slice_mult(a,b,s=0):
+    a_shape = a.get_shape()
+    num_filts = a_shape[-1]
+    filt_dim = len(a_shape) - 1
+    #a_real = tf.split(filt_dim,2,a)[s]
+    b_slice = tf.split(filt_dim,2,b)[s]
+    return tf.mul(a,b_slice)
 
 def complex_elemwise_mult(a, b, axis=-1):
-  #axis = 1 #treat half of the conv filters as complex (for th).  uncomment the above if using tf
-  a_shape = a.get_shape()
-  num_filts = a_shape[-1]
-  filt_dim = len(a_shape) - 1
-  a_both = tf.split(filt_dim,2,a)
-  b_both = tf.split(filt_dim,2,b)
-  r_real = tf.mul(a_both[0],b_both[0]) - tf.mul(a_both[1],b_both[1])
-  r_imag = tf.mul(a_both[0],b_both[1]) + tf.mul(a_both[1],b_both[0]) #mul versus *?
-  return tf.concat(filt_dim,[r_real, r_imag])
+    #axis = 1 #treat half of the conv filters as complex (for th).  uncomment the above if using tf
+    a_shape = a.get_shape()
+    num_filts = a_shape[-1]
+    filt_dim = len(a_shape) - 1
+    a_both = tf.split(filt_dim,2,a)
+    b_both = tf.split(filt_dim,2,b)
+    r_real = tf.mul(a_both[0],b_both[0]) - tf.mul(a_both[1],b_both[1])
+    r_imag = tf.mul(a_both[0],b_both[1]) + tf.mul(a_both[1],b_both[0]) #mul versus *?
+    return tf.concat(filt_dim,[r_real, r_imag])
 
 def complex_bound(a, axis=-1):
-  # Via Associative LSTMs, http://arxiv.org/abs/1602.03032
-  #axis = 1 #treat half of the conv filters as complex (for th).  uncomment the above if using tf 
-  a_shape = a.get_shape()
-  num_filts = a_shape[-1]
-  filt_dim = len(a_shape) - 1
-  a_both = tf.split(filt_dim,2,a)
-  d = tf.maximum(np.float32(1), tf.sqrt(a_both[0] * a_both[0] + a_both[1] * a_both[1]))
-  r_real = a_both[0] / d
-  r_imag = a_both[1] / d
-  return tf.concat(filt_dim,[r_real, r_imag])
+    # Via Associative LSTMs, http://arxiv.org/abs/1602.03032
+    #axis = 1 #treat half of the conv filters as complex (for th).  uncomment the above if using tf 
+    a_shape = a.get_shape()
+    num_filts = a_shape[-1]
+    filt_dim = len(a_shape) - 1
+    a_both = tf.split(filt_dim,2,a)
+    d = tf.maximum(np.float32(1), tf.sqrt(a_both[0] * a_both[0] + a_both[1] * a_both[1]))
+    r_real = a_both[0] / d
+    r_imag = a_both[1] / d
+    return tf.concat(filt_dim,[r_real, r_imag])
 
 def complex_dot_product(a, b):
-  a_shape = a.get_shape()
-  filt_dim = len(a_shape) - 1
-  a_both = tf.split(filt_dim,2,a)
-  b_both = tf.split(filt_dim-1,2,b)
-  r_real = tf.matmul(a_both[0], b_both[0]) - tf.matmul(a_both[1], b_both[1])
-  r_imag = tf.matmul(a_both[0], b_both[1]) + tf.matmul(a_both[1], b_both[0])
-  import ipdb;ipdb.set_trace()
-  return tf.concat(filt_dim,[r_real, r_imag])
+    a_shape = a.get_shape()
+    filt_dim = len(a_shape) - 1
+    a_both = tf.split(filt_dim,2,a)
+    b_both = tf.split(filt_dim-1,2,b)
+    r_real = tf.matmul(a_both[0], b_both[0]) - tf.matmul(a_both[1], b_both[1])
+    r_imag = tf.matmul(a_both[0], b_both[1]) + tf.matmul(a_both[1], b_both[0])
+    return tf.concat(filt_dim,[r_real, r_imag])
 
 def upsample(image,in_size,out_size,align_corners=False):
-  if in_size == out_size:
-     out = pass_gate
-  else:
-     out = tf.image.resize_nearest_neighbor(image,size,align_corners)
-  return out
+    if in_size == out_size:
+        out = pass_gate
+    else:
+        out = tf.image.resize_nearest_neighbor(image,size,align_corners)
+    return out
 
 def deconv():
-   pass 
+    pass 
 
-def real_stack(act):
-  a_shape = act.get_shape()
-  filt_dim = len(a_shape) - 1
-  a = tf.split(filt_dim,2,act)
-  return tf.concat(filt_dim,[a,a])
+def real_mul(a,b):
+    b_shape = b.get_shape()
+    filt_dim = len(b_shape) - 1
+    rc = tf.split(filt_dim,2,b)
+    return tf.concat(filt_dim,[tf.mul(a,rc[0]),rc[1]])
 
 def modulus(act):
-  a_shape = act.get_shape()
-  filt_dim = len(a_shape) - 1
-  a = tf.split(filt_dim,2,act) 
-  m = tf.add(tf.square(a[0]),tf.square(a[1])) 
-  return m#tf.concat(filt_dim,[m,m])
+    a_shape = act.get_shape()
+    filt_dim = len(a_shape) - 1
+    a = tf.split(filt_dim,2,act) 
+    m = tf.sqrt(tf.add(tf.square(a[0]),tf.square(a[1]))) 
+    return m#tf.concat(filt_dim,[m,m])
 
 def complex_comb(cplx_act,synch):
-  real_act = modulus(cplx_act)
-  return synchronize(real_act,cplx_act,synch)
+    real_act = modulus(cplx_act)
+    return synchronize(real_act,cplx_act,synch)
 
 def synchronize(modulus,cmplx,sy):
-  c_shape = cmplx.get_shape()
-  filt_dim = len(c_shape) - 1
-  rc = tf.split(filt_dim,2,cmplx) #real part of the complex valued weights
-  m = tf.add(modulus,rc[0]) #"classic" term
-  return tf.concat(filt_dim,tf.mul(m,sy[0]),tf.mul(rc[1],sy[1]))
-  #return tf.add(tf.mul(re,sy[0]),tf.mul(cmplx,sy[1])) #weighted combo. can learn this in the future
+    c_shape = cmplx.get_shape()
+    filt_dim = len(c_shape) - 1
+    rc = tf.split(filt_dim,2,cmplx) #real part of the complex valued weights
+    chi = tf.scalar_mul(sy[0],tf.add(modulus,rc[0])) #"classic" term
+    return tf.concat(filt_dim,[chi,rc[1]]) #tf.mul(rc[1],sy[1])])#don't weight the imaginary parts
+    #return tf.add(tf.mul(re,sy[0]),tf.mul(cmplx,sy[1])) #weighted combo. can learn this in the future
 
+def atan2(y, x):
+    angle = tf.select(tf.greater(x,0.0), tf.atan(y/x) + np.pi, tf.zeros_like(x))
+    angle = tf.select(tf.logical_and(tf.less(x,0.0),  tf.greater_equal(y,0.0)), tf.atan(y/x) + np.pi, angle)
+    angle = tf.select(tf.logical_and(tf.less(x,0.0),  tf.less(y,0.0)), tf.atan(y/x) - np.pi, angle)
+    angle = tf.select(tf.logical_and(tf.equal(x,0.0), tf.greater(y,0.0)), 0.5*np.pi * tf.ones_like(x), angle)
+    angle = tf.select(tf.logical_and(tf.equal(x,0.0), tf.less(y,0.0)), -0.5*np.pi * tf.ones_like(x), angle)
+    angle = tf.select(tf.logical_and(tf.equal(x,0.0), tf.equal(y,0.0)), np.nan * tf.zeros_like(x), angle)
+    return angle
 
+def complex_arg(cmplx):
+    c_shape = cmplx.get_shape()
+    filt_dim = len(c_shape) - 1
+    rc = tf.split(filt_dim,2,cmplx) #real part of the complex valued weights
+    return atan2(rc[1],rc[0])
+
+def complex_activation(f,z):
+    return tf.concat(len(z.get_shape())-1,[slice_mult(tf.truediv(f(modulus(z)) , modulus(z)),z,0),slice_mult(tf.truediv(f(modulus(z)) , modulus(z)),z,1)])
+
+def complex_sigmoid(z):
+    return complex_activation(tf.sigmoid,z)
+
+def complex_tanh(z):
+    return complex_activation(tf.tanh,z)

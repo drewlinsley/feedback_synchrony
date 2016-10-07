@@ -6,6 +6,7 @@ __pycache__/
 /summaries
 /ckpt_dir
 /temp
+/experiments
 # C extensions
 *.so
 

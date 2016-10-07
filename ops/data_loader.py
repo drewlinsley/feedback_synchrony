@@ -5,6 +5,7 @@ import re
 #from keras.datasets import mnist
 from tqdm import tqdm
 from skimage.color import rgb2gray
+from sklearn.preprocessing import OneHotEncoder
 
 def train(which_data='cluttered_mnist'):
     if which_data == 'adding_mnist':
@@ -60,22 +61,24 @@ def train(which_data='cluttered_mnist'):
             it_name = ims[i]
             im_array.append(misc.imresize(misc.imread(it_name),[40,40]))
             im_idx.append(int(re.split('ims/',re.split('.png',re.split('_',it_name)[-1])[0])[-1][0]))
-        im_array = np.asarray(im_array)
+        im_array = np.asarray(im_array).astype(np.float32)
         im_idx = np.asarray(im_idx)
+        enc = OneHotEncoder()#np.unique(y_train_temp))
+        im_idx = enc.fit_transform(im_idx.reshape(-1, 1)).toarray()###
         X_train_raw = im_array[0:int(np.round(0.9*len(im_array))),:,:]
         y_train_temp = im_idx[0:int(np.round(0.9*len(im_array)))]
         X_test_raw = im_array[int(np.round(0.9*len(im_array)))::,:,:]
         y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::]
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
-        cats = 1
+        cats = im_idx.shape[-1]
+        #cats = 1
         num_channels = 1        
 
     elif which_data == 'coco':
         from scipy import misc
         from glob import glob
         import re
-        from sklearn.preprocessing import OneHotEncoder
         file_dir = 'data/coco'
         ims = glob(file_dir +'/*.jpg')
         ims = np.asarray(ims)
@@ -83,7 +86,7 @@ def train(which_data='cluttered_mnist'):
         im_array = []
         im_idx = []
         num_ims = 120000
-        #num_ims = 3000
+        num_ims = 8000
         for i in tqdm(range(num_ims)):
             it_name = ims[i]
             it_img = misc.imresize(misc.imread(it_name),[50,50])
