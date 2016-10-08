@@ -153,8 +153,60 @@ def upsample(image,in_size,out_size,align_corners=False):
         out = tf.image.resize_nearest_neighbor(image,size,align_corners)
     return out
 
-def deconv():
-    pass 
+def create_deconv(im_size,filters,fsize):
+    #####
+    # TH input shape: (samples, input_depth, rows, cols)
+    # TH kernel shape: (depth, input_depth, rows, cols)
+    x = T.tensor4('x')
+    kernel = T.tensor4('kernel')
+    b = T.vector('b')
+    half_filters = filters//2
+    conv_out = T.nnet.conv2d(x, kernel,
+             border_mode='valid',
+             subsample=(1, 1),
+             filter_flip=False,  # <<<<< IMPORTANT 111, dont flip kern
+             input_shape=(1,half_filters,im_size[0],im_size[1]),
+             filter_shape=(1,half_filters,fsize,fsize))
+    #output = conv_out + K.reshape(b, (1, 1, 1, 1))
+    deconv_fun = theano.function([x,kernel],conv_out)
+    return deconv_fun
+
+
+def deconv(my_kernel,my_input_im,my_bias,deconv_fun):
+    num_filters = my_kernel.shape[1]
+    half_filters = num_filters//2
+    real_kernel = my_kernel[:,:half_filters,:,:]
+    im_kernel = my_kernel[:,half_filters:,:,:]
+    real_input_im = my_input_im[:,:half_filters,:,:] * my_bias[:half_filters]
+    im_input_im = my_input_im[:,half_filters:,:,:] * my_bias[half_filters:]
+    real_d_im = np.squeeze(deconv_fun(real_input_im,real_kernel))
+    im_d_im = np.squeeze(deconv_fun(im_input_im,im_kernel))
+
+    phase_im = real_d_im
+    for x in range(real_d_im.shape[0]):
+        for y in range(real_d_im.shape[1]):
+            phase_im[x,y] = math.degrees(math.atan2(im_d_im[x,y],phase_im[x,y]))
+
+    return phase_im
+
+def layer_activations(seq,X_test,layer_number_in,layer_number_out,batch_index):
+    if layer_number_in != layer_number_out:
+        get_layer_output = K.function([seq.layers[layer_number_in].input,K.learning_phase()],[seq.layers[layer_number_out].output])
+    else:
+        get_layer_output = K.function([seq.layers[layer_number_in].input],[seq.layers[layer_number_out].output])
+    small_batch = X_test[batch_index,:,:,:,:]
+    small_batch_single = np.repeat(small_batch[:,0,:,:,:],small_batch.shape[1],axis=1)
+    small_batch = np.concatenate((small_batch,small_batch_single[:,:,None,:,:]),axis=0)
+    mnist_activations = get_layer_output([small_batch])[0]
+    return get_layer_output, small_batch, mnist_activations
+
+def process_activations(mnist_activations,seq,layer_number_in,layer_number_out,image_number,timepoint):
+    my_input_im = np.squeeze(mnist_activations[image_number,timepoint,:,:,:])[None,:,:,:]
+    my_kernel = seq.layers[layer_number_out].U_c.get_value()[0][None,:,:,:]
+    my_b =  seq.layers[layer_number_out].get_weights()[8]
+    return my_input_im, my_kernel, my_b
+
+
 
 def real_mul(a,b):
     b_shape = b.get_shape()
@@ -162,23 +214,33 @@ def real_mul(a,b):
     rc = tf.split(filt_dim,2,b)
     return tf.concat(filt_dim,[tf.mul(a,rc[0]),rc[1]])
 
+def phase(act):
+    a_shape = act.get_shape()
+    filt_dim = len(a_shape) - 1
+    a = tf.split(filt_dim,2,act)
+    return atan2(a[1],a[0])
+
 def modulus(act):
     a_shape = act.get_shape()
     filt_dim = len(a_shape) - 1
     a = tf.split(filt_dim,2,act) 
-    m = tf.sqrt(tf.add(tf.square(a[0]),tf.square(a[1]))) 
-    return m#tf.concat(filt_dim,[m,m])
+    return tf.sqrt(tf.add(tf.square(a[0]),tf.square(a[1]))) 
+
+def convert_to_complex(modulus,phase):
+    return tf.mul(modulus,tf.exp(phase))
 
 def complex_comb(cplx_act,synch):
-    real_act = modulus(cplx_act)
-    return synchronize(real_act,cplx_act,synch)
+    p = phase(cplx_act)
+    m = modulus(cplx_act)
+    return synchronize(m,cplx_act,synch)
 
 def synchronize(modulus,cmplx,sy):
     c_shape = cmplx.get_shape()
     filt_dim = len(c_shape) - 1
     rc = tf.split(filt_dim,2,cmplx) #real part of the complex valued weights
     chi = tf.scalar_mul(sy[0],tf.add(modulus,rc[0])) #"classic" term
-    return tf.concat(filt_dim,[chi,rc[1]]) #tf.mul(rc[1],sy[1])])#don't weight the imaginary parts
+    delta = tf.scalar_mul(sy[1],rc[1]) #"synchrony" term
+    return tf.concat(filt_dim,[chi,delta])#tf.concat(filt_dim,[chi,rc[1]])
     #return tf.add(tf.mul(re,sy[0]),tf.mul(cmplx,sy[1])) #weighted combo. can learn this in the future
 
 def atan2(y, x):
@@ -204,3 +266,10 @@ def complex_sigmoid(z):
 
 def complex_tanh(z):
     return complex_activation(tf.tanh,z)
+
+def complex_conv(Z,W,b,sw,stride,padding='SAME'):
+    m = modulus(Z)
+    synchrony = tf.scalar_mul(sw[0],tf.add(tf.nn.conv2d(Z,W,stride,padding=padding),b))
+    classic = tf.scalar_mul(sw[1],tf.add(tf.nn.conv2d(tf.concat(len(Z.get_shape())-1,[m,m]),W,stride,padding=padding),b))
+    return tf.add(synchrony,classic) 
+

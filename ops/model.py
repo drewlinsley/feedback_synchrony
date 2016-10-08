@@ -13,10 +13,10 @@ import sys
 #Load data
 def build_model(s):
 	#Initialize some variables
-	if not os.path.exists(s.ckpt_dir):
-		os.makedirs(s.ckpt_dir)
-	if not os.path.exists('summaries/' + s.model_name + s.extra_tag):
-		os.makedirs('summaries/' + s.model_name + s.extra_tag)
+	#if not os.path.exists(s.ckpt_dir):
+	#	os.makedirs(s.ckpt_dir)
+	#if not os.path.exists('summaries/' + s.model_name + s.extra_tag):
+	#	os.makedirs('summaries/' + s.model_name + s.extra_tag)
 	prev_channels = s.channels
 	prev_height = s.height
 	Wi =[]; Ui = []; Wib = []; Uib = []; 
@@ -24,7 +24,7 @@ def build_model(s):
 	Wo =[]; Uo = []; Wob = []; Uob = []; 
 	Wc =[]; Uc = []; Wcb = []; Ucb = []; 
 	Wg =[]; Ug = []; Wgb =[]; Ugb = []; 
-	Sw = []; state = [];
+	state = [];
 
 	hh = [s.height]
 	hc = [prev_channels]
@@ -39,17 +39,18 @@ def build_model(s):
 		gate_fun = fix_complex_gates #don't need this if a complex activation function is used...
 		mult_fun = complex_elemwise_mult
 		dtp_fun = tf.matmul#complex_dot_product
-		complex_fun = complex_comb #add synchrony term 
+		complex_fun = complex_conv #add synchrony term 
+                Sw = [];Sc = [];Sh = [];Scb = [];Shb = [];
 	elif s.model_name == 'no_sync_complex':
 		gate_fun = fix_complex_gates
 		mult_fun = complex_elemwise_mult
 		dtp_fun = tf.matmul#complex_dot_product
-		complex_fun = pass_gate#complex_weight #add synchrony term 
+		complex_fun = apply_atrous#complex_weight #add synchrony term 
 	elif s.model_name == 'real':
 		gate_fun = pass_gate
 		mult_fun = tf.mul
 		dtp_fun = tf.matmul
-		complex_fun = pass_gate
+		complex_fun = apply_atrous
 	else: 
 		print('model name is not recognized')
 		sys.exit()
@@ -109,8 +110,12 @@ def build_model(s):
 			Ugb.append(tf.Variable(tf.constant(0.0, shape=[np.sum(s.filters)],dtype=tf.float32),trainable=True,name="Ugb_%d" % i))
 			prev_channels = s.filters[i]
 			# Add synchrony here
-			Sw.append(tf.Variable(tf.constant(0.5, shape=[2],dtype=tf.float32),trainable=True,name="Sw_%d" % i))
-			#Sh.append(tf.Variable(tf.constant(0.5, shape=[2],dtype=tf.float32),trainable=True,name="Sh_%d" % i))
+			if s.model_name == 'complex':
+				Sw.append(tf.Variable(tf.constant(0.5, shape=[2],dtype=tf.float32),trainable=True,name="Sw_%d" % i))
+				Sc.append(tf.get_variable(name="Sc_%d" % i, shape=in_size_u,initializer=s.init()))	
+                                Sh.append(tf.get_variable(name="Sh_%d" % i, shape=in_size_w,initializer=s.inner_init()))
+                        	Scb.append(tf.Variable(tf.constant(0.0, shape=[s.filters[i]],dtype=tf.float32),trainable=True,name="Scb_%d" % i))
+                        	Shb.append(tf.Variable(tf.constant(0.0, shape=[s.filters[i]],dtype=tf.float32),trainable=True,name="Shb_%d" % i))
 			# Preallocate the state
 			state.append(tf.zeros([s.batch_size,prev_height,prev_height,prev_channels])) #Consider concatenating Weight matrices... Should be much faster
 			prev_height = s.height #this is funky... change to something adaptive once I allow for different sized layers (via deconv)
@@ -129,37 +134,39 @@ def build_model(s):
 		for time_step in range(s.num_steps):
 			h_prev = X[:, time_step, :, :, :]
 			for layer in range(num_hidden_layers):
-				layer_strides = np.repeat(s.stride[layer],4).tolist() #4d tensor
+				layer_strides = [1,1,1,1]#HARDCODED FOR HIDDEN np.repeat(s.stride[layer],4).tolist() #4d tensor
 				#Facing the input
-
-				xi = complex_fun(tf.nn.conv2d(h_prev, Wi[layer], layer_strides, padding='SAME') + Wib[layer],Sw[layer])
-				xf = complex_fun(tf.nn.conv2d(h_prev, Wf[layer], layer_strides, padding='SAME') + Wfb[layer],Sw[layer])
-				xo = complex_fun(tf.nn.conv2d(h_prev, Wo[layer], layer_strides, padding='SAME') + Wob[layer],Sw[layer])
-				xc = complex_fun(tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer],Sw[layer])
+				xi = tf.nn.atrous_conv2d(h_prev, Wi[layer], s.stride[layer], padding='SAME') + Wib[layer]
+				xf = tf.nn.atrous_conv2d(h_prev, Wf[layer], s.stride[layer], padding='SAME') + Wfb[layer]
+				xo = tf.nn.atrous_conv2d(h_prev, Wo[layer], s.stride[layer], padding='SAME') + Wob[layer]
+				xc = tf.nn.atrous_conv2d(h_prev, Wc[layer], s.stride[layer], padding='SAME') + Wcb[layer]
 				#Facing the hidden layer
-				hi = complex_fun(tf.nn.conv2d(state[layer], Ui[layer], layer_strides, padding='SAME') + Uib[layer],Sw[layer])
-				hf = complex_fun(tf.nn.conv2d(state[layer], Uf[layer], layer_strides, padding='SAME') + Ufb[layer],Sw[layer])
-				ho = complex_fun(tf.nn.conv2d(state[layer], Uo[layer], layer_strides, padding='SAME') + Uob[layer],Sw[layer])
-				hc = complex_fun(tf.nn.conv2d(state[layer], Uc[layer], layer_strides, padding='SAME') + Ucb[layer],Sw[layer])
+				hi = tf.nn.conv2d(state[layer], Ui[layer], layer_strides, padding='SAME') + Uib[layer]
+				hf = tf.nn.conv2d(state[layer], Uf[layer], layer_strides, padding='SAME') + Ufb[layer]
+				ho = tf.nn.conv2d(state[layer], Uo[layer], layer_strides, padding='SAME') + Uob[layer]
+				hc = tf.nn.conv2d(state[layer], Uc[layer], layer_strides, padding='SAME') + Ucb[layer]
+                                #Synchronize the input and hidden-facing content
+                                if s.model_name == 'complex':
+                                	xc = complex_fun(xc, Sc[layer], Scb[layer], Sw[layer], layer_strides, padding='SAME')
+                                	hc = complex_fun(hc, Sh[layer], Shb[layer], Sw[layer], layer_strides, padding='SAME')
 				#Fix complex gates after applying activations
 				i = gate_fun(s.inner_activation(xi + hi)) #need to implement the complex-valued ops fix_complex_gates
 				f = gate_fun(s.inner_activation(xf + hf))
 				o = gate_fun(s.inner_activation(xo + ho)) #The original implementation handled the h's seperately
-
-				# Feedback gates:
+				# Feedback gates (apply reichert & serre to the hidden state of the unit:
 				target_layer = np.min([layer + s.num_afferents, num_hidden_layers])
 				if target_layer > num_hidden_layers - 1:
-					gated_prev_timestep = complex_fun(tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') + Ucb[idx],Sw[layer])
-					new_c = s.activation(complex_fun((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]),Sw[layer]) + gated_prev_timestep)
+                                        #gated_prev_timestep = complex_fun(state[layer], Uc[idx], Ucb[idx], Sw[layer], layer_strides, padding='SAME')
+					gated_prev_timestep = tf.nn.atrous_conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') + Ucb[idx]
+					new_c = s.activation((tf.nn.atrous_conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + gated_prev_timestep)
 				else:
 					con_range = range(layer,target_layer+1) #need to adjust the hidden state concat
-					#print(con_range)
-					gates = [s.inner_activation(complex_fun((tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]),Sw[layer]) + 
-					tf.reduce_sum(tf.reshape(complex_fun((tf.nn.conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),Sw[layer]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
+					gates = [s.inner_activation((tf.nn.atrous_conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
+					tf.reduce_sum(tf.reshape((tf.nn.atrous_conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
 					#Gated_prev_timestep is the activations from all afferents weighted by Gates
-					gated_prev_timestep = [gates[idx - layer] * complex_fun((tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx]),Sw[layer])for idx in con_range]
+					gated_prev_timestep = [gates[idx - layer] * (tf.nn.atrous_conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx]) for idx in con_range]
 					#c is now calculated as tanh(current hidden content + sum of the gated afferents)
-					new_c = s.activation(complex_fun((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]),Sw[layer]) + tf.add_n(gated_prev_timestep))
+					new_c = s.activation((tf.nn.atrous_conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
 				#Get new h and c as per usual
 				c = mult_fun(f, c) + mult_fun(i, new_c) #complex multiplication here
 				#state[layer] = mult_fun(o, s.activation(c))
@@ -225,7 +232,7 @@ def build_model(s):
 	init_vars = tf.initialize_all_variables()
 	#tf.check_numerics()
 
-	return session, init_vars, merged, saver, optim, writers, cost, keep_prob, X, targets, Wc, Wg, Uc, Ug, pred, accuracy#, keep_prob
+	return session, init_vars, merged, saver, optim, writers, cost, keep_prob, X, targets, Wc, Wg, Uc, Ug, state, c, pred, accuracy#, keep_prob
 
 def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy, X, targets, X_train_raw, y_train_temp, X_test_raw, y_test_temp, s):
 	#Consider clipping
@@ -292,9 +299,11 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 						{X: vx[val_idx,:,:,:,:], targets: vy[val_idx]})
 				valid_writer.add_summary(val_result,iters)
                                 valid_writer.flush()
-				sys.stdout.write("training step %d, cost %g, cost delta %g, accuracy %g --- validation cost %g, cost delta %g, accuracy %g     \r"%(iters, costs, prev_train_costs - costs, train_acc ,val_cost, prev_val_costs - val_cost, val_acc))
+				sys.stdout.write("training step %d, cost %g, cost delta %g, accuracy %g --- validation cost %g, cost delta %g, accuracy %g     \r"%(iters, np.exp(costs / iters), np.exp((prev_train_costs - costs) / iters), train_acc ,np.exp(val_cost / iters), np.exp((prev_val_costs - costs) / iters), val_acc))
 				sys.stdout.flush()
 				prev_train_costs = costs
 				prev_val_costs = val_cost
+				#check_op = tf.add_check_numerics_ops()
+				#sess.run([train_merged, check_op])
 		checkpoint_file = new_ckpt_dir +  s.model_name + s.extra_tag + '_epoch_' + str(i)
 		saver.save(session, checkpoint_file)

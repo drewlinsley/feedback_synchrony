@@ -6,8 +6,9 @@ import re
 from tqdm import tqdm
 from skimage.color import rgb2gray
 from sklearn.preprocessing import OneHotEncoder
+import prepare_mnist_data
 
-def train(which_data='cluttered_mnist'):
+def train(which_data='cluttered_mnist',num_steps=5):
     if which_data == 'adding_mnist':
         data = np.load('/home/drew/Documents/addition_cluttered_mnist_32_32.npz');
         X_train_raw = data['X_train_raw']
@@ -49,18 +50,18 @@ def train(which_data='cluttered_mnist'):
         cats = 1
         num_channels = 1
 
-    elif which_data == 'multi_mnist':
+    elif which_data == 'cluttered_mnist_classification':
         from scipy import misc
         from glob import glob
         import re
-        file_dir = 'data/multiple_ims'
+        file_dir = 'data/cluttered_ims'
         ims = glob(file_dir +'/*.png')
         im_array = []
         im_idx = []
         for i in tqdm(range(len(ims))):
             it_name = ims[i]
-            im_array.append(misc.imresize(misc.imread(it_name),[40,40]))
-            im_idx.append(int(re.split('ims/',re.split('.png',re.split('_',it_name)[-1])[0])[-1][0]))
+            im_array.append(misc.imread(it_name))
+            im_idx.append(int(re.split('.png',re.split('_',it_name)[-1])[0]))
         im_array = np.asarray(im_array).astype(np.float32)
         im_idx = np.asarray(im_idx)
         enc = OneHotEncoder()#np.unique(y_train_temp))
@@ -72,7 +73,35 @@ def train(which_data='cluttered_mnist'):
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
         cats = im_idx.shape[-1]
-        #cats = 1
+        num_channels = 1
+
+    elif which_data == 'multi_mnist':
+        from scipy import misc
+        from glob import glob
+        import re
+        file_dir = 'data/multiple_ims_2'
+        ims = glob(file_dir +'/*.png')
+        im_array = []
+        im_idx = []
+        im_size = [40,40]
+        for i in tqdm(range(len(ims))):
+            it_name = ims[i]
+            im_array.append(misc.imresize(misc.imread(it_name),im_size))
+            im_sum = np.sum(map(lambda x: int(x),re.split('_',re.split('label_',re.split('.png',it_name)[0])[1])))
+            im_idx.append(im_sum)
+        im_array = np.asarray(im_array).astype(np.float32)
+        im_idx = np.asarray(im_idx) ####NEED TO FIX THIS. THE LABELS ARE INCORRECT!!!
+        #Get dummy data for the labels
+        _,dy = prepare_mnist_data.repeat_adding_task(im_array,im_idx,num_steps,im_array.shape[0],im_size,'classify')
+        enc = OneHotEncoder()#np.unique(y_train_temp))
+        im_idx = enc.fit_transform(dy.reshape(-1, 1)).toarray()###
+        X_train_raw = im_array[0:int(np.round(0.9*len(im_array))),:,:]
+        y_train_temp = im_idx[0:int(np.round(0.9*len(im_array)))]
+        X_test_raw = im_array[int(np.round(0.9*len(im_array)))::,:,:]
+        y_test_temp = im_idx[int(np.round(0.9*len(im_array)))::]
+        train_num = X_train_raw.shape[0]
+        im_size = X_train_raw.shape[-2:]
+        cats = im_idx.shape[-1]
         num_channels = 1        
 
     elif which_data == 'coco':
@@ -85,8 +114,8 @@ def train(which_data='cluttered_mnist'):
         np.random.shuffle(ims)
         im_array = []
         im_idx = []
-        num_ims = 120000
-        num_ims = 8000
+        num_ims = 150000
+        #num_ims = 8000
         for i in tqdm(range(num_ims)):
             it_name = ims[i]
             it_img = misc.imresize(misc.imread(it_name),[50,50])
