@@ -9,7 +9,7 @@ from ops import prepare_mnist_data
 from ops import data_loader
 import os
 import sys
-
+from scipy import sparse 
 #Load data
 def build_model(s):
 	#Initialize some variables
@@ -45,12 +45,12 @@ def build_model(s):
 		gate_fun = fix_complex_gates
 		mult_fun = complex_elemwise_mult
 		dtp_fun = tf.matmul#complex_dot_product
-		complex_fun = apply_atrous#complex_weight #add synchrony term 
+		#complex_fun = apply_atrous#complex_weight #add synchrony term 
 	elif s.model_name == 'real':
 		gate_fun = pass_gate
 		mult_fun = tf.mul
 		dtp_fun = tf.matmul
-		complex_fun = apply_atrous
+		#complex_fun = apply_atrous
 	else: 
 		print('model name is not recognized')
 		sys.exit()
@@ -157,16 +157,16 @@ def build_model(s):
 				target_layer = np.min([layer + s.num_afferents, num_hidden_layers])
 				if target_layer > num_hidden_layers - 1:
                                         #gated_prev_timestep = complex_fun(state[layer], Uc[idx], Ucb[idx], Sw[layer], layer_strides, padding='SAME')
-					gated_prev_timestep = tf.nn.atrous_conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') + Ucb[idx]
-					new_c = s.activation((tf.nn.atrous_conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + gated_prev_timestep)
+					gated_prev_timestep = tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') + Ucb[idx]
+					new_c = s.activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + gated_prev_timestep)
 				else:
 					con_range = range(layer,target_layer+1) #need to adjust the hidden state concat
-					gates = [s.inner_activation((tf.nn.atrous_conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
-					tf.reduce_sum(tf.reshape((tf.nn.atrous_conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
+					gates = [s.inner_activation((tf.nn.conv2d(h_prev, Wg[idx], layer_strides, padding='SAME') +  Wgb[idx]) + 
+					tf.reduce_sum(tf.reshape((tf.nn.conv2d(prev_concat_h, Ug[idx], layer_strides, padding='SAME') +  Ugb[idx]),(s.batch_size,prev_height,prev_height,s.filters[idx],num_hidden_layers)),4)) for idx in con_range] #restricted to num_afferents levels above the current... is this conv or element
 					#Gated_prev_timestep is the activations from all afferents weighted by Gates
-					gated_prev_timestep = [gates[idx - layer] * (tf.nn.atrous_conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx]) for idx in con_range]
+					gated_prev_timestep = [gates[idx - layer] * (tf.nn.conv2d(state[layer], Uc[idx], layer_strides, padding='SAME') +  Ucb[idx]) for idx in con_range]
 					#c is now calculated as tanh(current hidden content + sum of the gated afferents)
-					new_c = s.activation((tf.nn.atrous_conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
+					new_c = s.activation((tf.nn.conv2d(h_prev, Wc[layer], layer_strides, padding='SAME') + Wcb[layer]) + tf.add_n(gated_prev_timestep))
 				#Get new h and c as per usual
 				c = mult_fun(f, c) + mult_fun(i, new_c) #complex multiplication here
 				#state[layer] = mult_fun(o, s.activation(c))
@@ -242,12 +242,17 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 	if not os.path.exists(new_ckpt_dir):
 		os.makedirs(new_ckpt_dir)
 
-	if s.output_shape == 1:
-		#roc = 'regress'
+	if s.which_data == 'mnist_addition':
 		task = prepare_mnist_data.repeat_adding_task
-	else:
-		#roc = 'classify'
-		task = prepare_mnist_data.repeat_task
+	elif s.which_data == 'coco':
+		task = prepare_mnist_data.repeat_task 
+	elif s.which_data == 'multi_mnist':
+		task = prepare_mnist_data.multi_mnist_adding_task
+	elif s.which_data == 'cluttered_mnist_classification':
+		task = prepare_mnist_data.cluttered_mnist_classification
+        else:
+		print('data is not recognized')
+		sys.exit()	
 
 	costs = 0.0
 	prev_train_costs = 0.0
@@ -265,7 +270,7 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 	for i in range(s.epochs):
 		print('Epoch', i)
 		x,y = task(X_train_raw,y_train_temp,s.num_steps,data_size,[s.height,s.width,s.channels],s.output_shape) #turn regress into a variable passed from main
-		vx,vy = task(X_test_raw, y_test_temp,s.num_steps,data_size,[s.height,s.width,s.channels],s.output_shape)
+		vx,vy = task(X_test_raw, y_test_temp,s.num_steps,val_data_size,[s.height,s.width,s.channels],s.output_shape)
 		cv_ind = range(data_size)
 		np.random.shuffle(cv_ind)
 		cv_ind = cv_ind[:(cv_folds*s.batch_size)]
@@ -278,6 +283,8 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 			train_idx = cv_ind[idx,:]
 			bx = x[train_idx,:,:,:,:]
 			by = y[train_idx]
+			if sparse.issparse(by):
+				by = by.todense()
 			if s.dropout_prob > 0:
 				result, step_cost, _, train_acc = session.run([train_merged, cost, optim, accuracy],{X: bx, targets: by, keep_prob: s.dropout_prob})
 			else:
@@ -291,12 +298,15 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 				train_writer.flush()
 				#Prepare validation stats
 				val_idx = val_cv_ind[idx%val_cv_folds,:]
+				val_labels = vy[val_idx]
+				if sparse.issparse(val_labels):
+					val_labels = val_labels.todense()
 				if s.dropout_prob > 0:
 					val_result, val_cost, _, val_acc = session.run([valid_merged, cost, optim, accuracy],
-						{X: vx[val_idx,:,:,:,:], targets: vy[val_idx], keep_prob: 1})
+						{X: vx[val_idx,:,:,:,:], targets: val_labels, keep_prob: 1})
 				else:
 					val_result, val_cost, _, val_acc = session.run([valid_merged, cost, optim, accuracy],
-						{X: vx[val_idx,:,:,:,:], targets: vy[val_idx]})
+						{X: vx[val_idx,:,:,:,:], targets: val_labels})
 				valid_writer.add_summary(val_result,iters)
                                 valid_writer.flush()
 				sys.stdout.write("training step %d, cost %g, cost delta %g, accuracy %g --- validation cost %g, cost delta %g, accuracy %g     \r"%(iters, np.exp(costs / iters), np.exp((prev_train_costs - costs) / iters), train_acc ,np.exp(val_cost / iters), np.exp((prev_val_costs - costs) / iters), val_acc))

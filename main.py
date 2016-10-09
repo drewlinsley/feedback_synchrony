@@ -18,9 +18,9 @@ if not os.path.exists(meta_output):
     os.makedirs(meta_output)
 
 #Load data
-which_data = 'cluttered_mnist_classification'##'multi_mnist'#coco
+which_data = 'multi_mnist'#'cluttered_mnist_classification'#'cluttered_mnist_classification'##'multi_mnist'#coco
 num_steps = 5
-X_train_raw,y_train_temp,X_test_raw,y_test_temp,train_num,im_size,num_channels,cats = data_loader.train(which_data=which_data,num_steps=num_steps)
+X_train_raw,y_train_temp,X_test_raw,y_test_temp,_,im_size,num_channels,cats = data_loader.train(which_data=which_data,num_steps=num_steps)
 X_train_raw,data_mu,data_std = data_loader.normalize(X_train_raw,zm=True,uv=True)
 
 # Model hyperparameters/training parameters
