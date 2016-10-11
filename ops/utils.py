@@ -3,6 +3,8 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 import math
+import sys
+import prepare_mnist_data
 
 def factors(n):    
     return list(reduce(list.__add__, 
@@ -78,6 +80,21 @@ class Map(dict):
     def __delitem__(self, key):
         super(Map, self).__delitem__(key)
         del self.__dict__[key]
+
+def parse_task(s):
+    if s.which_data == 'mnist_addition':
+        task = prepare_mnist_data.repeat_adding_task
+    elif s.which_data == 'coco':
+        task = prepare_mnist_data.repeat_task 
+    elif s.which_data == 'multi_mnist':
+        task = prepare_mnist_data.multi_mnist_adding_task
+    elif s.which_data == 'cluttered_mnist_classification':
+        task = prepare_mnist_data.cluttered_mnist_classification
+    else:
+        print('data is not recognized')
+        sys.exit()  
+
+    return task
 
 def orthogonal_initializer(scale = 1.1):
     ''' From Lasagne and Keras. Reference: Saxe et al., http://arxiv.org/abs/1312.6120
@@ -169,7 +186,6 @@ def create_deconv(im_size,filters,fsize):
     deconv_fun = theano.function([x,kernel],conv_out)
     return deconv_fun
 
-
 def deconv(my_kernel,my_input_im,my_bias,deconv_fun):
     num_filters = my_kernel.shape[1]
     half_filters = num_filters//2
@@ -203,8 +219,6 @@ def process_activations(mnist_activations,seq,layer_number_in,layer_number_out,i
     my_kernel = seq.layers[layer_number_out].U_c.get_value()[0][None,:,:,:]
     my_b =  seq.layers[layer_number_out].get_weights()[8]
     return my_input_im, my_kernel, my_b
-
-
 
 def real_mul(a,b):
     b_shape = b.get_shape()

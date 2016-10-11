@@ -5,8 +5,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.models.rnn.ptb import reader
 import os
-from ops import data_loader, prepare_mnist_data 
-from ops import model
+from ops import data_loader, prepare_mnist_data, model
 #from ops import atrous_model as model
 from ops.utils import *
 import time
@@ -18,7 +17,7 @@ if not os.path.exists(meta_output):
     os.makedirs(meta_output)
 
 #Load data
-which_data = 'cluttered_mnist_classification'#'cluttered_mnist_classification'##'multi_mnist'#coco
+which_data = 'coco'#'cluttered_mnist_classification'#'cluttered_mnist_classification'##'multi_mnist'#coco
 num_steps = 5
 X_train_raw,y_train_temp,X_test_raw,y_test_temp,_,im_size,num_channels,cats = data_loader.train(which_data=which_data,num_steps=num_steps)
 X_train_raw,data_mu,data_std = data_loader.normalize(X_train_raw,zm=True,uv=True)
@@ -41,7 +40,7 @@ settings = {'batch_size':30,
 'dropout_prob':.2,
 'channels':num_channels,
 'ckpt_dir':'./ckpt_dir',
-'model_name':'complex',#'real',#'no_sync_complex',#'complex',#'no_sync_complex', #'complex',#'#real or complex#
+'model_name':'no_sync_complex',#'complex',#'no_sync_complex', #'complex',#'#real or complex#
 'extra_tag':'_' + which_data + '_' + time.strftime('%H_%M_%S'),
 'gpu_number':0, #keep at 0 unless using multi-gpu
 'restore_model':False,#True,

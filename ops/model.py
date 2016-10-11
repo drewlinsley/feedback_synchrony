@@ -242,18 +242,7 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 	if not os.path.exists(new_ckpt_dir):
 		os.makedirs(new_ckpt_dir)
 
-	if s.which_data == 'mnist_addition':
-		task = prepare_mnist_data.repeat_adding_task
-	elif s.which_data == 'coco':
-		task = prepare_mnist_data.repeat_task 
-	elif s.which_data == 'multi_mnist':
-		task = prepare_mnist_data.multi_mnist_adding_task
-	elif s.which_data == 'cluttered_mnist_classification':
-		task = prepare_mnist_data.cluttered_mnist_classification
-        else:
-		print('data is not recognized')
-		sys.exit()	
-
+	task = parse_task(s)
 	costs = 0.0
 	prev_train_costs = 0.0
 	prev_val_costs = 0.0
@@ -317,3 +306,4 @@ def batch_train(session, merged, saver, optim, writer, cost, keep_prob, accuracy
 				#sess.run([train_merged, check_op])
 		checkpoint_file = new_ckpt_dir +  s.model_name + s.extra_tag + '_epoch_' + str(i)
 		saver.save(session, checkpoint_file)
+	return train_acc, val_acc
