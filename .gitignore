@@ -2,7 +2,13 @@
 __pycache__/
 *.py[cod]
 *$py.class
-/data
+/data/cluttered_ims
+/data/Cluttered_Mnits_label.npy
+/data/coco
+/data/multiple_ims
+/data/multiple_ims_2
+/data/Multiple_Mnist_label.npy
+/data/test_multiple_ims
 /summaries
 /ckpt_dir
 /temp

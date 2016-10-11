@@ -155,19 +155,17 @@ def upsample(image,in_size,out_size,align_corners=False):
 
 def create_deconv(im_size,filters,fsize):
     #####
-    # TH input shape: (samples, input_depth, rows, cols)
-    # TH kernel shape: (depth, input_depth, rows, cols)
+    # TF input shape: (samples, rows, cols, channels)
+    # TF kernel shape: (rows, cols, out_channels, in_channels)
     x = T.tensor4('x')
     kernel = T.tensor4('kernel')
     b = T.vector('b')
     half_filters = filters//2
-    conv_out = T.nnet.conv2d(x, kernel,
-             border_mode='valid',
-             subsample=(1, 1),
-             filter_flip=False,  # <<<<< IMPORTANT 111, dont flip kern
-             input_shape=(1,half_filters,im_size[0],im_size[1]),
-             filter_shape=(1,half_filters,fsize,fsize))
-    #output = conv_out + K.reshape(b, (1, 1, 1, 1))
+    conv_out = tf.nn.conv2d_transpose(x, kernel,
+             output_shape='???',
+             strides=[1, 1, 1, 1],
+             padding='SAME',
+             name='deconv')
     deconv_fun = theano.function([x,kernel],conv_out)
     return deconv_fun
 

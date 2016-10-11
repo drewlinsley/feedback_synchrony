@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 import multiple_mnist
+import cluttered_mnist
 import data_loader
 
 def adding_task(X_train_raw,y_train_temp,maxToAdd,examplesPer,im_size,classify_or_regress):
@@ -115,7 +116,7 @@ def multi_mnist_adding_task(X_train_raw,y_train_temp,maxToAdd,examplesPer,im_siz
         X_train[i,:,:,:,:] = example[:,:,:,None]
         y_train.append((exampleY))
     y_train     = np.array(y_train)
-    enc = OneHotEncoder()
+    enc = OneHotEncoder(n_values = 9 * 4 + 1) #hardcode for now... 1-36 + 0 are the possible numbers
     y_train = enc.fit_transform(y_train.reshape(-1,1))
     return X_train, y_train
 
@@ -133,7 +134,7 @@ def cluttered_mnist_classification(X_train_raw,y_train_temp,maxToAdd,examplesPer
         indices     = np.repeat(i,maxToAdd)
         example     = X_train_raw[indices]
         #sum up the outputs for new output
-        exampleY    = y_train_temp[indices,:]
+        exampleY    = y_train_temp[indices]
         X_train[i,:,:,:,:] = example[:,:,:,None]
         y_train.append((exampleY[0]))
     y_train     = np.array(y_train)

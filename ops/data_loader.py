@@ -94,10 +94,10 @@ def train(which_data='cluttered_mnist',num_steps=5):
         X,y = cluttered_mnist.get_mnists(100000)
         enc = OneHotEncoder()
         im_idx = enc.fit_transform(y.reshape(-1, 1)).toarray()
-        X_train_raw = im_array[0:int(np.round(0.9*len(y))),:,:]
-        y_train_temp = im_idx[0:int(np.round(0.9*len(y)))]
-        X_test_raw = im_array[int(np.round(0.9*len(y)))::,:,:]
-        y_test_temp = im_idx[int(np.round(0.9*len(y)))::]
+        X_train_raw = X[0:int(np.round(0.9*len(y))),:,:]
+        y_train_temp = y[0:int(np.round(0.9*len(y)))]
+        X_test_raw = X[int(np.round(0.9*len(y)))::,:,:]
+        y_test_temp = y[int(np.round(0.9*len(y)))::]
         train_num = X_train_raw.shape[0]
         im_size = X_train_raw.shape[-2:]
         cats = im_idx.shape[-1]

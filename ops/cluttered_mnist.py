@@ -126,8 +126,8 @@ def get_mnists(N):
         num_noise = np.random.randint(how_much_noise[0], how_much_noise[1])
         noise_set = []
         for i in range(0,num_noise):
-            noise_set.append(mnist_noise[np.random.randint(train_x.shape[0])]/255)
+            noise_set.append(mnist_noise[np.random.randint(len(mnist_noise))]/255)
         New_Mnist_x[k,:,:] = Data_generation_mnist(random_data, h, noise_set,new_h,new_w) 
-        New_Mnist_y.append(random_index)
+        New_Mnist_y[k] = random_index
     return New_Mnist_x, np.asarray(New_Mnist_y)
 
