@@ -17,7 +17,7 @@ if not os.path.exists(meta_output):
     os.makedirs(meta_output)
 
 #Load data
-which_data = 'coco'#'cluttered_mnist_classification'#'cluttered_mnist_classification'##'multi_mnist'#coco
+which_data = 'cluttered_mnist_classification'#'cluttered_mnist_classification'##'multi_mnist'#coco
 num_steps = 5
 X_train_raw,y_train_temp,X_test_raw,y_test_temp,_,im_size,num_channels,cats = data_loader.train(which_data=which_data,num_steps=num_steps)
 X_train_raw,data_mu,data_std = data_loader.normalize(X_train_raw,zm=True,uv=True)
@@ -50,7 +50,7 @@ settings = {'batch_size':30,
 'init':tf.contrib.layers.xavier_initializer_conv2d, #Weight inits #tf.contrib.layers.xavier_initializer
 'inner_init':orthogonal_initializer,
 'activation':tf.tanh,#complex_tanh,#tf.tanh,# 
-'inner_activation':tf.nn.relu6,#complex_sigmoid,#tf.nn.relu6, #
+'inner_activation':complex_sigmoid,#tf.nn.relu6, #CHANGE HERE
 'which_data':which_data
 }
 s = Map(settings)

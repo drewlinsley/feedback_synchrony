@@ -21,7 +21,6 @@ def evaluate_model(meta_data,session,saver,x,y,checkpoint_ptr):
         session, init_vars, merged, saver, optim, writer, cost, keep_prob, X, targets, Wc, Uc, Wg, Ug, c, state, pred, accuracy = model.build_model(s)
         session.run(init_vars)
     saver.restore(session,checkpoint_ptr)#Load trained weights into model
-
     #Load data
     if x == '' or y == '':
         X_train_raw,y_train_temp,X_test_raw,y_test_temp,_,im_size,num_channels,cats = data_loader.train(which_data=s.which_data,num_steps=s.num_steps)
@@ -40,15 +39,17 @@ def evaluate_model(meta_data,session,saver,x,y,checkpoint_ptr):
     #np.random.shuffle(cv_ind)
     cv_ind = cv_ind[:(cv_folds*s.batch_size)]
     cv_ind = np.reshape(cv_ind,[cv_folds,s.batch_size])
-    yhat = np.zeros((y.shape[0],1))
+    yhat = np.zeros((np.prod(cv_ind.shape),1))
+    yreal = np.zeros((np.prod(cv_ind.shape),1))
     for idx in tqdm(range(cv_folds)):
         cv_idx = cv_ind[idx,:]
         bx = x[cv_idx,:,:,:,:]
-        by = y[cv_idx]    
+        import ipdb;ipdb.set_trace()
         it_yhat = run_fun(bx)
         yhat[cv_idx] = np.argmax(it_yhat,axis=1).reshape(len(cv_idx),1)
+        yreal[cv_idx] = np.argmax(y[cv_idx].todense(),axis=1)
     if s.output_shape > 1:
-        summary_stat = np.mean((yhat==y).astype(np.float32))
+        summary_stat = np.mean(np.array(yhat==yreal).astype(np.float32))
     else:
         summary_stat = np.sum(diffs**2)    
     return summary_stat, yhat, x, y, session, saver

@@ -42,7 +42,7 @@ def build_model(s):
 		complex_fun = complex_conv #add synchrony term 
                 Sw = [];Sc = [];Sh = [];Scb = [];Shb = [];
 	elif s.model_name == 'no_sync_complex':
-		gate_fun = fix_complex_gates
+		gate_fun = pass_gate#fix_complex_gates
 		mult_fun = complex_elemwise_mult
 		dtp_fun = tf.matmul#complex_dot_product
 		#complex_fun = apply_atrous#complex_weight #add synchrony term 
@@ -145,10 +145,10 @@ def build_model(s):
 				hf = tf.nn.conv2d(state[layer], Uf[layer], layer_strides, padding='SAME') + Ufb[layer]
 				ho = tf.nn.conv2d(state[layer], Uo[layer], layer_strides, padding='SAME') + Uob[layer]
 				hc = tf.nn.conv2d(state[layer], Uc[layer], layer_strides, padding='SAME') + Ucb[layer]
-                                #Synchronize the input and hidden-facing content
-                                if s.model_name == 'complex':
-                                	xc = complex_fun(xc, Sc[layer], Scb[layer], Sw[layer], layer_strides, padding='SAME')
-                                	hc = complex_fun(hc, Sh[layer], Shb[layer], Sw[layer], layer_strides, padding='SAME')
+                #Synchronize the input and hidden-facing content
+                if s.model_name == 'complex':
+                	xc = complex_fun(xc, Sc[layer], Scb[layer], Sw[layer], layer_strides, padding='SAME')
+                	hc = complex_fun(hc, Sh[layer], Shb[layer], Sw[layer], layer_strides, padding='SAME')
 				#Fix complex gates after applying activations
 				i = gate_fun(s.inner_activation(xi + hi)) #need to implement the complex-valued ops fix_complex_gates
 				f = gate_fun(s.inner_activation(xf + hf))

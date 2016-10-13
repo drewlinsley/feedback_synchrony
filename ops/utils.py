@@ -21,7 +21,7 @@ def convert_to_phase(ims):
                 phase_ims[x,y,:,i] = math.atan2(np.squeeze(imag_ims[x,y,:,i]),np.squeeze(real_ims[x,y,:,i]))
     return phase_ims
 
-def im_mosaic(ims,phase):
+def im_mosaic(ims,phase,save=False):
     if ims.shape[-2] == 1:
         pass
     elif ims.shape[-2] > 1:
@@ -37,7 +37,7 @@ def im_mosaic(ims,phase):
     f = plt.figure()
     for p in tqdm(range(ims.shape[-1])):
         a = plt.subplot(s1,s2,p+1)
-	if phase:
+        if phase:
             plt.imshow(np.squeeze(ims[:,:,:,p]),cmap=cm, vmin=-3.15,vmax=3.15);
         else:
             plt.imshow(np.squeeze(ims[:,:,:,p]),cmap=cm)
@@ -46,6 +46,8 @@ def im_mosaic(ims,phase):
     plt.subplots_adjust(wspace=0.01,hspace=0.01,right=0.8)    
     cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
     plt.colorbar(cax=cbar_ax)
+    if save != False:
+        plt.savefig(save + '.png')
     plt.show()
 
 class Map(dict):
@@ -271,7 +273,12 @@ def complex_arg(cmplx):
     return atan2(rc[1],rc[0])
 
 def complex_activation(f,z):
-    return tf.concat(len(z.get_shape())-1,[slice_mult(tf.truediv(f(modulus(z)) , modulus(z)),z,0),slice_mult(tf.truediv(f(modulus(z)) , modulus(z)),z,1)])
+    m = modulus(z)
+    fm = f(m)
+    q = tf.div(fm , m) #tf.truediv()
+    r = slice_mult(q,z,0)
+    c = slice_mult(q,z,1)
+    return tf.concat(len(z.get_shape())-1,[r,c])
 
 def complex_sigmoid(z):
     return complex_activation(tf.sigmoid,z)
